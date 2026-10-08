@@ -122,6 +122,20 @@ if [[ "$result" != "ok admin" ]]; then
   exit 1
 fi
 
+python3 - "$render/data/.minetest/worlds/world/auth.sqlite" <<'PY'
+import sqlite3
+import sys
+
+con = sqlite3.connect(sys.argv[1])
+privs = [row[0] for row in con.execute("SELECT privilege FROM user_privileges")]
+print("privileges:", " ".join(sorted(privs)))
+if any('"' in priv or priv.startswith(" ") for priv in privs):
+    sys.exit("privilege names include quotes or spaces; minetest.conf values were parsed wrong")
+for required in ("interact", "shout", "privs", "server", "ban"):
+    if required not in privs:
+        sys.exit(f"admin is missing privilege {required}")
+PY
+
 python3 "$root/scripts/luanti_probe.py" 127.0.0.1 30000 NotAFriend
 sleep 2
 logs="$(docker logs "$container" 2>&1 || true)"

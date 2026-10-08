@@ -180,7 +180,7 @@ Linode Backups, in Cloud Manager, are a whole-disk snapshot of the VM. Use those
 
 ## Game
 
-The default game is Minetest Game, checked out at a pinned commit because the official image does not ship a game. To switch later, change `game_id`, `game_git_url`, and `game_git_ref`, then apply. Examples are in `terraform.tfvars.example` (VoxeLibre, Mineclonia). An existing world is not converted. Point `world_name` at a new directory or restore a matching backup.
+The default game is Minetest Game, checked out at a pinned commit because the official image does not ship a game. `game_id` is the directory name under `games/`. Luanti 5.17 strips a trailing `_game` when it looks a game up, so this directory `minetest_game` is logged as game id `minetest`. To switch later, change `game_id`, `game_git_url`, and `game_git_ref`, then apply. Examples are in `terraform.tfvars.example` (VoxeLibre, Mineclonia). An existing world is not converted. Point `world_name` at a new directory or restore a matching backup.
 
 The server is `ghcr.io/luanti-org/luanti:5.17.0`, not `:latest`, under systemd (`Restart=always`), so it comes back after a crash or a reboot. World data is on the volume, mounted at `/var/lib/luanti`.
 

@@ -2,22 +2,22 @@
 # This server is private. Do not set server_announce, server_address, or server_url.
 
 server_announce = false
-server_name = "${server_name}"
-motd = "${motd}"
+server_name = ${server_name}
+motd = ${motd}
 
 port = ${port}
 ipv6_server = true
 max_users = ${max_users}
 
 # The player named here is the server admin.
-name = "${admin_name}"
+name = ${admin_name}
 
 # New accounts must set a password. Accounts are created by the admin
 # (luanti-setpassword) before a friend connects. Players cannot register
 # themselves with a blank password, and the allowlist mod rejects unknown names
 # before an account is created.
 disallow_empty_password = true
-default_privs = "${default_privs}"
+default_privs = ${default_privs}
 
 creative_mode = ${creative_mode}
 enable_damage = ${enable_damage}
