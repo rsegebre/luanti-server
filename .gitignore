@@ -10,6 +10,8 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+# Non-secret inputs for CI. Secrets stay in GitHub Actions secrets.
+!main/terraform.tfvars
 
 # Generated from bootstrap output. Contains the bucket endpoint, not the secret key,
 # but it is environment-specific.

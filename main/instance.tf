@@ -3,7 +3,7 @@ resource "linode_instance" "luanti" {
   region           = var.region
   type             = var.instance_type
   image            = var.image
-  authorized_keys  = var.admin_ssh_public_keys
+  authorized_keys  = concat(var.admin_ssh_public_keys, var.deploy_ssh_public_keys)
   backups_enabled  = var.backups_enabled
   disk_encryption  = var.disk_encryption
   swap_size        = var.swap_size
@@ -11,11 +11,17 @@ resource "linode_instance" "luanti" {
   watchdog_enabled = true
   tags             = ["luanti", "private"]
 
-  # user_data is ForceNew. Keep player allowlists and game settings out of it.
-  # Those are pushed over SSH (see runtime.tf) so a friend can be added without
-  # replacing the VM. This cloud-init only hardens the host and mounts the volume.
+  # user_data is ForceNew. Keep player allowlists, game settings, and SSH
+  # public keys out of it. Those are pushed over SSH (see runtime.tf).
+  # authorized_keys is also ForceNew. Ignore it after create so adding or
+  # rotating a key updates the files on disk instead of replacing the VM.
+  # The first create still writes this list into /root/.ssh/authorized_keys.
   metadata {
     user_data = base64encode(local.cloud_init)
+  }
+
+  lifecycle {
+    ignore_changes = [authorized_keys]
   }
 
   timeouts {

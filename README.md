@@ -2,7 +2,7 @@
 
 Terraform for a small Luanti server (the project formerly called Minetest) on one Linode, at `luanti.rsegebre.com`. It is for a couple of friends connecting from home. The DNS name resolves, but the server is not on the public server list, the firewall drops everyone else, and an in-game allowlist rejects unknown player names.
 
-Nothing in this repo is applied for you. After review, run `terraform plan` and read it before any apply. Do not point these roots at a production token until that plan looks right.
+Bootstrap is applied once from your machine. After that, GitHub Actions plans `main/` on pull requests and applies it when commits land on `main`, after you approve the `production` environment. Nothing in this repo has been applied.
 
 ## What a plan creates
 
@@ -38,11 +38,12 @@ Linode Backups are tied to the VM. Replacing the VM discards those backups. The 
 ## Layout
 
 ```
-bootstrap/          local-state root: buckets and keys
+bootstrap/          local-state root: buckets and keys (manual, once)
 main/               S3-backend root: VM, firewall, DNS, config push
 main/files/         scripts and systemd units installed on the VM
 main/templates/     cloud-init, minetest.conf, allowlist mod
-scripts/            local helpers (IP update, validate, smoke test)
+.github/workflows/  plan on pull requests, apply on main
+scripts/            local helpers and CI checks
 ```
 
 ## Prerequisites
@@ -50,10 +51,10 @@ scripts/            local helpers (IP update, validate, smoke test)
 - Terraform >= 1.10 (1.16 is fine)
 - A Linode personal access token (`LINODE_TOKEN`) that can manage instances, firewalls, volumes, and Object Storage
 - A Cloudflare API token (`CLOUDFLARE_API_TOKEN`), account-owned (`cfat_…`), with zone DNS edit on `rsegebre.com` only
-- The SSH private key matching the public key in `admin_ssh_public_keys`, loaded in `ssh-agent` when you apply with the config push turned on
 - `git`, `curl`, and `python3` on the machine that runs the helper script
+- For a manual apply of `main/` only: the SSH private key for a key already installed on the VM, in `ssh-agent`
 
-No tokens are committed. Real `terraform.tfvars`, `backend.hcl`, and state files are gitignored.
+No tokens are committed. `main/terraform.tfvars` is committed and holds the non-secret inputs (the repo is private). Other `*.tfvars` files, `backend.hcl`, and state files are gitignored.
 
 ## First-time setup
 
@@ -81,32 +82,15 @@ Run this from a checkout of the repo. The bootstrap root uses local state. That 
    terraform output -raw backups_s3_endpoint_host
    ```
 
-3. If either hostname differs from `us-sea-1.linodeobjects.com`, edit `main/backend.hcl` (the state host) and set `object_storage_endpoint` in `main/terraform.tfvars` (the backups host, no `https://`). New buckets sometimes land on a different endpoint than the example.
+3. If either hostname differs from `us-sea-1.linodeobjects.com`, set `object_storage_endpoint` in `main/terraform.tfvars` to the backups host (no `https://`) and set the Actions variable `TF_STATE_ENDPOINT_HOST` to the state host. New buckets sometimes land on a different endpoint than the example.
 
-4. Copy the example inputs and review them:
+`main/terraform.tfvars` is already in the repo. Edit that file for IPs, names, and the deploy public key. Do not apply `main/` from the laptop as the normal path. The next section is the rollout Actions will run.
 
-   ```bash
-   cd ../main
-   cp terraform.tfvars.example terraform.tfvars
-   ```
+`terraform init -backend=false` skips the backend. Use that, or `scripts/validate.sh`, on a machine that does not have the state keys. A real plan needs the keys.
 
-   Every input is in that example. The backup keys stay in the environment, not in the file.
+### Applying main from a laptop
 
-5. Initialize the remote backend, then plan:
-
-   ```bash
-   export CLOUDFLARE_API_TOKEN=...
-   terraform init -backend-config=backend.hcl
-   terraform plan
-   ```
-
-   `terraform init -backend=false` skips the backend. Use that for a review machine that does not have the state keys. `terraform validate` does not need real backup keys. A plan does.
-
-6. Apply from a network that is already in `admin_cidrs`, with the SSH key in the agent. The firewall is created before the SSH push, but the first boot still has to accept your connection.
-
-   If you are not on an allowlisted network, set `push_config_over_ssh = false`, apply, then from home set it back to `true` and apply again. The second apply only uploads config. It does not rebuild the VM.
-
-Optional: `TF_VAR_admin_ssh_private_key` instead of ssh-agent. Prefer the agent. The private key is sensitive.
+Actions is the supported apply path. A laptop apply races the Actions concurrency group and is easy to get wrong. If you still need one, export the same tokens the workflow uses, run it from an `admin_cidrs` address (or set `push_config_over_ssh = false` until you are), and do not leave `ci_ssh_cidrs` set. Leave `admin_ssh_private_key` unset so Terraform uses `ssh-agent`.
 
 ## Day to day
 
@@ -114,11 +98,11 @@ Changing a player CIDR or an admin CIDR updates the firewall in place. It does n
 
 Changing the allowlist, game pin, port, or backup settings re-runs the SSH push and restarts Luanti. The world directory is kept.
 
-Changing `admin_ssh_public_keys`, `sudo_user`, `world_volume_label`, or anything else inside cloud-init replaces the VM. `user_data` and `authorized_keys` are ForceNew in the Linode provider. The world volume is reattached and is not formatted again if it already has a filesystem. Linode Backups of the old VM are deleted with it.
+Changing `sudo_user`, `world_volume_label`, or anything else inside cloud-init replaces the VM. `user_data` is ForceNew. SSH public keys are not in cloud-init. `authorized_keys` is ForceNew too, and it is ignored after the first create, so adding or rotating a key does not rebuild the VM. The config push rewrites `authorized_keys` on disk. The world volume is reattached if the VM is replaced, and it is not formatted again if it already has a filesystem. Linode Backups of the old VM are deleted with it.
 
 `terraform destroy` will not delete the volume until you remove `prevent_destroy` from `linode_volume.world`. Do that only when you mean to delete the world.
 
-There is no state lock. Do not run two applies at once. Linode Object Storage has no DynamoDB lock, and conditional-write lockfiles are unreliable on the E1 endpoint. Bucket versioning is off because turning it on needs the access key, and a limited key that references the bucket creates a dependency cycle.
+There is no state lock. The Actions workflow uses one concurrency group so its plans and applies do not overlap. Do not apply from a laptop while that workflow is running. Linode Object Storage has no DynamoDB lock, and conditional-write lockfiles are unreliable on the E1 endpoint. Bucket versioning is off because turning it on needs the access key, and a limited key that references the bucket creates a dependency cycle.
 
 ## Adding a player
 
@@ -189,7 +173,8 @@ The server is `ghcr.io/luanti-org/luanti:5.17.0`, not `:latest`, under systemd (
 These differ from a literal reading of "everything in Fremont" or "config only via cloud-init", with reasons:
 
 - **Object Storage is in Seattle (`us-sea`), not Fremont.** Fremont has no Object Storage. Seattle's E1 endpoint is the nearest generally available cluster. The VM stays in `us-west`.
-- **The world is on a 10 GB volume.** Cloud-init `user_data` and `authorized_keys` force a new VM when they change. A world on the root disk would be destroyed with it. The volume has `prevent_destroy` set. Ten gigabytes is Linode's minimum, about $1/month, so the total is about $30–$35 rather than $34 with no volume.
+- **The world is on a 10 GB volume.** Cloud-init `user_data` forces a new VM when it changes. A world on the root disk would be destroyed with it. The volume has `prevent_destroy` set. Ten gigabytes is Linode's minimum, about $1/month, so the total is about $30–$35 rather than $34 with no volume.
+- **SSH keys are installed by the config push.** Linode's `authorized_keys` attribute is ForceNew, so it is ignored after create. The first create still seeds root's key file. Later edits, including the CI deploy key, are written over SSH and do not replace the VM.
 - **ICMP from anywhere is allowed.** Path MTU discovery and IPv6 neighbor discovery come from routers, not from the player's address. Dropping them breaks the path even for an allowlisted player. ICMP is not a way to join.
 - **Allowlists are pushed over SSH, not baked into cloud-init.** Putting them in `user_data` would replace the VM on every friend added. The first boot still uses Linode Metadata user data (cloud-init). Akamai's current docs say Metadata is on in every region, including Fremont, and Ubuntu 24.04 ships the datasource. This repo could not query the live regions API. If create-time API rejects `user_data` in `us-west`, stop and add a StackScript. Do not ignore that error. After the first boot, `cloud-init status` should be `done`.
 - **The join allowlist is a small mod in this repo** (`player_allowlist`), generated from `allowed_player_names`. It uses `core.register_on_prejoinplayer`. A third-party mod would be another supply-chain dependency for a list we already render.
@@ -208,18 +193,92 @@ That runs `terraform fmt -check`, `terraform init -backend=false && terraform va
 
 `scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, and checks that the server starts, does not announce, loads the allowlist, accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io and GitHub. It does not call Linode or Cloudflare.
 
+## GitHub Actions
+
+Workflow: `.github/workflows/terraform-main.yml`.
+
+- Pull requests that touch `main/` or this workflow run `scripts/validate.sh` and `terraform plan`. The plan is posted as one pull-request comment (the same comment is updated on later commits). `ci_ssh_cidrs` is empty in that plan. Terraform redacts sensitive values, and a check refuses to post the comment if a configured secret still appears in the text.
+- A push to `main` that touches those paths runs the same validate, then `terraform apply`, in the `production` environment. Approve that deployment or the apply does not start.
+- Plans and applies share the concurrency group `luanti-main`. A new run waits. It does not cancel an apply that is already going.
+
+### Required reviewer
+
+The workflow cannot create this. GitHub will create an empty `production` environment the first time the apply job runs, with no required reviewer, and the apply will start immediately. Create the environment before you merge:
+
+1. On GitHub, open the repository **Settings → Environments → New environment**. Name it `production`. The name has to match the workflow.
+2. Under **Deployment protection rules**, enable **Required reviewers** and add yourself.
+3. Under **Deployment branches and tags**, allow the `main` branch only.
+4. Save. Do this before the workflow file is on `main`.
+
+### Temporary SSH from the runner
+
+The runner's public IP changes every job, so it is not something to commit into `admin_cidrs`. An API edit made outside Terraform would either be removed when Terraform next reconciles the firewall (often before the SSH push) or left behind as drift.
+
+Instead, `ci_ssh_cidrs` is a Terraform variable that defaults to empty and only accepts a single host (`/32` or `/128`). The apply step looks up the runner's IPv4, checks it is one address, and sets `TF_VAR_ci_ssh_cidrs` to that `/32` for the apply. The firewall is updated before the SSH push because the push depends on it. The same job then runs `terraform apply -target=linode_firewall.luanti` with the variable set back to `[]`. That step is `if: always()` and still runs when the apply fails or is cancelled, as long as the apply step actually started. It does not SSH. When it succeeds, state matches the committed config: no runner rule, and no drift.
+
+If that cleanup apply also fails, the runner `/32` stays on the firewall until a later apply succeeds. GitHub reuses those addresses, so treat a failed cleanup as something to clear. The rule is SSH only, not Luanti.
+
+### Deploy key
+
+This key is not your personal key. The private half is only in Actions. The public half is in `deploy_ssh_public_keys` in `main/terraform.tfvars`.
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-luanti" -f deploy_key -N ""
+```
+
+Commit `deploy_key.pub` contents into `deploy_ssh_public_keys`. Put the contents of `deploy_key` in the environment secret below. Delete both local files. Do not commit the private key.
+
+The apply job refuses to start if that list is empty or the secret is missing, so a merge without the key does not create a VM you cannot SSH to.
+
+Rotating it, without replacing the VM:
+
+1. Add the new public key next to the old one in `deploy_ssh_public_keys` and merge. The apply still connects with the old private key and writes both public keys.
+2. Replace `DEPLOY_SSH_PRIVATE_KEY` with the new private key.
+3. Remove the old public key and merge again.
+
+Replacing the only public key and the secret in one step fails: the runner would be trying the new key before the VM trusts it.
+
+### Secrets and variables
+
+Create these before you merge. Repository secrets are available to the plan job. The deploy private key is an environment secret so pull requests cannot read it.
+
+| Name | Kind | Where | Value |
+| --- | --- | --- | --- |
+| `LINODE_TOKEN` | Repository secret | Settings → Secrets and variables → Actions | Same Linode token you used for bootstrap |
+| `CLOUDFLARE_API_TOKEN` | Repository secret | same | `cfat_…` token with zone DNS edit on `rsegebre.com` |
+| `TF_STATE_ACCESS_KEY` | Repository secret | same | Bootstrap output `state_access_key` |
+| `TF_STATE_SECRET_KEY` | Repository secret | same | Bootstrap output `state_secret_key` |
+| `BACKUPS_ACCESS_KEY` | Repository secret | same | Bootstrap output `backups_access_key` |
+| `BACKUPS_SECRET_KEY` | Repository secret | same | Bootstrap output `backups_secret_key` |
+| `TF_STATE_BUCKET` | Repository variable | Settings → Secrets and variables → Actions → Variables | Bootstrap output `state_bucket_label` |
+| `TF_STATE_ENDPOINT_HOST` | Repository variable | same | Bootstrap output `state_s3_endpoint_host`, hostname only |
+| `DEPLOY_SSH_PRIVATE_KEY` | Environment secret on `production` | Settings → Environments → production → Environment secrets | Contents of the deploy private key file |
+
+Non-secret inputs (home CIDRs, player names, both public keys, game pin, backup bucket label, backups endpoint) live in `main/terraform.tfvars` and change through pull requests.
+
+### First apply
+
+1. Apply `bootstrap/` from your machine and store that state file somewhere private.
+2. Create the `production` environment and add yourself as a required reviewer. Limit it to `main`.
+3. Generate the deploy key. Commit the public half in `main/terraform.tfvars`. Store the private half as the environment secret.
+4. Create the repository secrets and variables in the table above.
+5. Merge the pull request.
+6. Open the Actions run for that push and approve the `production` deployment.
+7. After it finishes, the cleanup step should have removed the runner SSH rule. From home, `ssh root@luanti.rsegebre.com` and run `luanti-setpassword` for the admin name.
+
 ## Credentials you must supply
 
 | Name | Where | Purpose |
 | --- | --- | --- |
-| `LINODE_TOKEN` | environment | Bootstrap and main Linode provider |
-| `CLOUDFLARE_API_TOKEN` | environment | DNS edits on `rsegebre.com` (`cfat_…`) |
-| `AWS_ACCESS_KEY_ID` | environment, from bootstrap `state_access_key` | Main S3 backend |
-| `AWS_SECRET_ACCESS_KEY` | environment, from bootstrap `state_secret_key` | Main S3 backend |
-| `TF_VAR_backups_access_key` | environment, from bootstrap `backups_access_key` | World-backup uploads |
-| `TF_VAR_backups_secret_key` | environment, from bootstrap `backups_secret_key` | World-backup uploads |
-| SSH private key | ssh-agent, or `TF_VAR_admin_ssh_private_key` | Config push |
-| `main/terraform.tfvars` | local file, copied from the example | Every non-secret input |
+| `LINODE_TOKEN` | environment, for bootstrap and a manual plan | Linode provider. Actions stores the same value as secret `LINODE_TOKEN` |
+| `CLOUDFLARE_API_TOKEN` | environment | DNS edits on `rsegebre.com` (`cfat_…`). Actions secret of the same name |
+| `AWS_ACCESS_KEY_ID` | environment, from bootstrap `state_access_key` | Main S3 backend on a laptop. Actions secret `TF_STATE_ACCESS_KEY` |
+| `AWS_SECRET_ACCESS_KEY` | environment, from bootstrap `state_secret_key` | Main S3 backend on a laptop. Actions secret `TF_STATE_SECRET_KEY` |
+| `TF_VAR_backups_access_key` | environment, from bootstrap `backups_access_key` | World-backup uploads. Actions secret `BACKUPS_ACCESS_KEY` |
+| `TF_VAR_backups_secret_key` | environment, from bootstrap `backups_secret_key` | World-backup uploads. Actions secret `BACKUPS_SECRET_KEY` |
+| Deploy private key | `production` environment secret `DEPLOY_SSH_PRIVATE_KEY` | Config push from Actions |
+| Owner private key | ssh-agent, only for a manual apply or for playing admin | Matches `admin_ssh_public_keys` |
+| `main/terraform.tfvars` | committed file | Every non-secret input, including the deploy public key |
 
 The backup secret is written into `/etc/luanti/rclone.conf` on the VM and is therefore also in the main state file. That state lives in the private state bucket, and the game server's key cannot read it. Keep the bootstrap state file private too.
 
@@ -227,7 +286,10 @@ The backup secret is written into `/etc/luanti/rclone.conf` on the VM and is the
 
 - The hostname resolves publicly. Privacy is the firewall, the name allowlist, and passwords, not a secret DNS name.
 - A `/64` is a household prefix. Anyone who can use an address in that prefix can open a UDP session. They still need an allowlisted name and a password.
-- The first apply's SSH step must come from an `admin_cidrs` address. A plan from anywhere is fine. An apply with `push_config_over_ssh = true` from somewhere else will create the VM and then fail the provisioner.
+- Actions opens SSH to the runner for one apply and then removes that `/32`. If the cleanup step fails, that host route stays until a later apply. It is not a Luanti rule.
+- Create the `production` environment and its required reviewer before this workflow is on `main`. Otherwise GitHub creates the environment with no reviewer and the apply starts on its own.
+- The first Actions apply needs a deploy public key already in `main/terraform.tfvars`. The job stops before Terraform if that list or the private-key secret is empty.
+- A manual apply still has to come from an `admin_cidrs` address. Do not set `ci_ssh_cidrs` in the committed file.
 - Confirm the AAAA record is a host address. The provider's `ipv6` attribute is the SLAAC address; the config strips a trailing prefix length if one is present.
 - Replacing the VM (new SSH key, renamed sudo user, edited cloud-init) drops Linode Backups for the old instance. Take a world tarball first if you are not sure the nightly job has run.
 - Do not run two applies at the same time. There is no state lock.

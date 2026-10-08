@@ -3,8 +3,12 @@ locals {
 
   player_ipv4 = [for cidr in var.player_cidrs : cidr if !strcontains(cidr, ":")]
   player_ipv6 = [for cidr in var.player_cidrs : cidr if strcontains(cidr, ":")]
-  admin_ipv4  = [for cidr in var.admin_cidrs : cidr if !strcontains(cidr, ":")]
-  admin_ipv6  = [for cidr in var.admin_cidrs : cidr if strcontains(cidr, ":")]
+  # ci_ssh_cidrs is empty except during the GitHub Actions apply that pushes config.
+  ssh_cidrs  = distinct(concat(var.admin_cidrs, var.ci_ssh_cidrs))
+  admin_ipv4 = [for cidr in local.ssh_cidrs : cidr if !strcontains(cidr, ":")]
+  admin_ipv6 = [for cidr in local.ssh_cidrs : cidr if strcontains(cidr, ":")]
+
+  managed_authorized_keys = "${join("\n", concat(var.admin_ssh_public_keys, var.deploy_ssh_public_keys))}\n"
 
   public_ipv4 = one([
     for addr in tolist(linode_instance.luanti.ipv4) : addr
@@ -13,12 +17,11 @@ locals {
   public_ipv6 = split("/", linode_instance.luanti.ipv6)[0]
 
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
-    hostname_short  = var.instance_label
-    fqdn            = var.hostname
-    sudo_user       = var.sudo_user
-    ssh_public_keys = var.admin_ssh_public_keys
-    volume_label    = var.world_volume_label
-    host_bootstrap  = file("${path.module}/files/host-bootstrap.sh")
+    hostname_short = var.instance_label
+    fqdn           = var.hostname
+    sudo_user      = var.sudo_user
+    volume_label   = var.world_volume_label
+    host_bootstrap = file("${path.module}/files/host-bootstrap.sh")
   })
 
   minetest_conf = templatefile("${path.module}/templates/minetest.conf.tftpl", {

@@ -86,7 +86,7 @@ variable "world_volume_size_gb" {
 
 variable "admin_ssh_public_keys" {
   type        = list(string)
-  description = "SSH public keys for root and the sudo user. Changing this list replaces the VM (Linode marks authorized_keys ForceNew). The world volume is reattached."
+  description = "Owner SSH public keys for root and the sudo user. Written by the config push. Also included in the initial Linode authorized_keys; that attribute is ignored after create so editing this list does not replace the VM."
   default     = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAPCZTXQUV6iaNHp7lhyTjRB/j/ivLtZKZhN6aPo5Lhv robertosegebre13@gmail.com"]
 
   validation {
@@ -100,10 +100,41 @@ variable "admin_ssh_public_keys" {
 
 variable "admin_ssh_private_key" {
   type        = string
-  description = "Private key used to push config over SSH. Leave null to use ssh-agent. Prefer TF_VAR_admin_ssh_private_key over a file."
+  description = "Private key used to push config over SSH. Leave null to use ssh-agent. GitHub Actions sets this to the deploy key. Prefer the environment over a file."
   default     = null
   sensitive   = true
   nullable    = true
+}
+
+variable "deploy_ssh_public_keys" {
+  type        = list(string)
+  description = "Public halves of CI deploy keys. Not secret. The private half stays in the DEPLOY_SSH_PRIVATE_KEY Actions secret. Empty until the owner generates a key. Same install path as admin_ssh_public_keys, so rotation does not replace the VM."
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for key in var.deploy_ssh_public_keys :
+      can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com) [A-Za-z0-9+/=]+", key))
+    ])
+    error_message = "Each deploy key must be an SSH public key."
+  }
+}
+
+variable "ci_ssh_cidrs" {
+  type        = list(string)
+  description = "Extra SSH host routes for this apply only. GitHub Actions sets the runner /32, then applies again with this empty. Leave it empty in tfvars."
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.ci_ssh_cidrs :
+      can(cidrhost(cidr, 0)) && (
+        (!strcontains(cidr, ":") && endswith(cidr, "/32")) ||
+        (strcontains(cidr, ":") && endswith(cidr, "/128"))
+      )
+    ])
+    error_message = "ci_ssh_cidrs must be individual hosts (/32 or /128). Leave it empty outside CI."
+  }
 }
 
 variable "sudo_user" {

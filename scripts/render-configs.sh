@@ -21,11 +21,10 @@ locals {
   names = ["admin"]
 
   cloud_init = templatefile("${var.root}/main/templates/cloud-init.yaml.tftpl", {
-    hostname_short  = "luanti"
-    fqdn            = "luanti.rsegebre.com"
-    sudo_user       = "luantiadmin"
-    ssh_public_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAPCZTXQUV6iaNHp7lhyTjRB/j/ivLtZKZhN6aPo5Lhv robertosegebre13@gmail.com"]
-    volume_label    = "luanti-world"
+    hostname_short = "luanti"
+    fqdn           = "luanti.rsegebre.com"
+    sudo_user      = "luantiadmin"
+    volume_label   = "luanti-world"
     host_bootstrap  = file("${var.root}/main/files/host-bootstrap.sh")
   })
 

@@ -12,6 +12,7 @@ resource "terraform_data" "runtime_config" {
     backup_timer        = local.backup_timer
     backups_secret_hash = local.backups_secret_hash
     backups_access_hash = local.backups_access_hash
+    authorized_keys     = local.managed_authorized_keys
     object_endpoint     = var.object_storage_endpoint
     install_script      = filesha256("${path.module}/files/luanti-install.sh")
     run_script          = filesha256("${path.module}/files/luanti-run.sh")
@@ -40,6 +41,26 @@ resource "terraform_data" "runtime_config" {
       "cloud-init status --wait",
       "mkdir -p /etc/luanti /usr/local/sbin /var/lib/luanti/password-drop /var/lib/luanti/backups",
       "mkdir -p /var/lib/luanti/data/.minetest/worlds/${var.world_name}/worldmods/player_allowlist",
+      "install -d -m 0700 /root/.ssh",
+      "install -d -m 0700 -o ${var.sudo_user} -g ${var.sudo_user} /home/${var.sudo_user}/.ssh",
+    ]
+  }
+
+  provisioner "file" {
+    content     = local.managed_authorized_keys
+    destination = "/root/.ssh/authorized_keys"
+  }
+
+  provisioner "file" {
+    content     = local.managed_authorized_keys
+    destination = "/home/${var.sudo_user}/.ssh/authorized_keys"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod 0600 /root/.ssh/authorized_keys /home/${var.sudo_user}/.ssh/authorized_keys",
+      "chown root:root /root/.ssh/authorized_keys",
+      "chown ${var.sudo_user}:${var.sudo_user} /home/${var.sudo_user}/.ssh/authorized_keys",
     ]
   }
 

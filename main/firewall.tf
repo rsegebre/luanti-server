@@ -44,6 +44,9 @@ resource "linode_firewall" "luanti" {
     }
   }
 
+  # SSH sources are admin_cidrs plus ci_ssh_cidrs. The CI list is empty in
+  # committed config. Actions sets it to the runner /32 for one apply, then
+  # applies this firewall again with the list empty so the rule does not linger.
   dynamic "inbound" {
     for_each = length(local.admin_ipv4) > 0 ? [1] : []
     content {
