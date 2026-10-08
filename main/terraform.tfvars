@@ -28,7 +28,9 @@ admin_ssh_public_keys = [
 # DEPLOY_SSH_PRIVATE_KEY. Leave this empty until then; the apply job refuses
 # to run with an empty list. To rotate, add the new key beside the old one,
 # apply, switch the secret, then remove the old key and apply again.
-deploy_ssh_public_keys = []
+deploy_ssh_public_keys = [
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINlxZvhA/SRQOfBOVU8BxyKfHN00/GKKj7BN/rDTder4 github-actions-luanti",
+]
 # admin_ssh_private_key = null
 # ci_ssh_cidrs = []
 sudo_user = "luantiadmin"
