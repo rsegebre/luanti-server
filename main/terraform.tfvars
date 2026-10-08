@@ -64,6 +64,40 @@ game_git_url = "https://github.com/luanti-org/minetest_game.git"
 game_git_ref = "c42e4d0c0ff9d27ff7b9b308c3cfc14098dd3a0f"
 world_name   = "world"
 
+# Mods installed into the world's worldmods directory on apply. git_ref is a
+# full 40-character commit SHA. Adding or removing one restarts Luanti and does
+# not replace the VM or the volume. None of these need trusted = true.
+# creatura is animalia's hard dependency; it is not part of Minetest Game.
+# farming is Farming Redo and overrides Minetest Game's farming of the same
+# name. See "Mods on this server" in the README.
+mods = [
+  {
+    name    = "creatura"
+    git_url = "https://github.com/ElCeejo/creatura.git"
+    git_ref = "4eb507cf2433f0787691f560842deea79a1666f4"
+  },
+  {
+    name    = "animalia"
+    git_url = "https://github.com/ElCeejo/animalia.git"
+    git_ref = "5895f403fd43a9464e06b3675af3495f50565a3f"
+  },
+  {
+    name    = "i3"
+    git_url = "https://github.com/mt-historical/i3.git"
+    git_ref = "6f60b2446f32e2a4d73d80b1f71f58e9b1e4870c"
+  },
+  {
+    name    = "farming"
+    git_url = "https://codeberg.org/tenplus1/farming.git"
+    git_ref = "fbe17a9fbe2a95003b8b71b98d6bb49d5079dd37"
+  },
+  {
+    name    = "nether"
+    git_url = "https://github.com/minetest-mods/nether.git"
+    git_ref = "c34722d42678a034e3546cbd6ff9774697f5351b"
+  },
+]
+
 server_name   = "Private"
 motd          = "Private server for invited players. Ask the owner if you need an account."
 max_users     = 8

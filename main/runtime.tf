@@ -3,6 +3,8 @@ resource "terraform_data" "runtime_config" {
 
   # Re-runs the SSH push when config changes. This does not replace the VM.
   # Firewall CIDR edits are not in this map, so an IP update does not need SSH.
+  # mods is folded into server_env (a MODS_SHA256 line) only when the list is
+  # non-empty, so mods = [] does not by itself replace this resource.
   triggers_replace = {
     minetest_conf       = local.minetest_conf
     world_mt            = local.world_mt
@@ -103,6 +105,16 @@ resource "terraform_data" "runtime_config" {
   }
 
   provisioner "file" {
+    content     = local.mods_manifest
+    destination = "/var/lib/luanti/mods.manifest"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/files/luanti-mods.sh"
+    destination = "/usr/local/sbin/luanti-mods"
+  }
+
+  provisioner "file" {
     source      = "${path.module}/files/luanti-install.sh"
     destination = "/usr/local/sbin/luanti-install"
   }
@@ -139,9 +151,10 @@ resource "terraform_data" "runtime_config" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod 0755 /usr/local/sbin/luanti-install /usr/local/sbin/luanti-run /usr/local/sbin/luanti-backup /usr/local/sbin/luanti-restore /usr/local/sbin/luanti-setpassword",
-      "chmod 0644 /etc/luanti/minetest.conf /etc/luanti/server.env /etc/systemd/system/luanti.service /etc/systemd/system/luanti-backup.service /etc/systemd/system/luanti-backup.timer",
+      "chmod 0755 /usr/local/sbin/luanti-install /usr/local/sbin/luanti-mods /usr/local/sbin/luanti-run /usr/local/sbin/luanti-backup /usr/local/sbin/luanti-restore /usr/local/sbin/luanti-setpassword",
+      "chmod 0644 /etc/luanti/minetest.conf /etc/luanti/server.env /etc/systemd/system/luanti.service /etc/systemd/system/luanti-backup.service /etc/systemd/system/luanti-backup.timer /var/lib/luanti/mods.manifest",
       "chmod 0600 /etc/luanti/rclone.conf",
+      "/usr/local/sbin/luanti-mods",
       "/usr/local/sbin/luanti-install",
     ]
   }

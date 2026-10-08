@@ -17,7 +17,7 @@ Main (`main/`, S3 backend):
 - A 10 GB Block Storage volume for the world, attached to that VM
 - A Cloud Firewall attached to the VM: inbound default DROP, outbound ACCEPT, UDP 30000 and SSH 22 only from the allowlists, plus ICMP
 - Cloudflare DNS-only A and AAAA records for `luanti.rsegebre.com`
-- A config push over SSH that installs the container, the game, and the allowlist. That push runs on apply, not during plan
+- A config push over SSH that installs the container, the game, the allowlist, and any mods listed in `mods`. That push runs on apply, not during plan
 
 ## Cost
 
@@ -96,7 +96,7 @@ Actions is the supported apply path. A laptop apply races the Actions concurrenc
 
 Changing a player CIDR or an admin CIDR updates the firewall in place. It does not SSH and does not replace the VM.
 
-Changing the allowlist, game pin, port, or backup settings re-runs the SSH push and restarts Luanti. The world directory is kept.
+Changing the allowlist, the mod list, the game pin, the port, or backup settings re-runs the SSH push and restarts Luanti. The world directory is kept. An empty `mods` list does not by itself re-run that push.
 
 SSH public keys are not in cloud-init. `authorized_keys` and `metadata.user_data` are both ForceNew, and both are ignored after the first create. Adding or rotating an SSH key, and editing cloud-init (including `main/files/host-bootstrap.sh`, which the template embeds), do not replace the VM. The first create still installs the current keys and user data. A VM replaced for some other reason is created with the current values. The config push rewrites `authorized_keys` on disk. Cloud-init does not re-run on an existing VM, so a bootstrap-script fix applies on the next instance, not by rewriting user data in place. Renaming `sudo_user` or `world_volume_label` likewise does not replace the VM, and it does not create a new account or rewrite the device path on the host that is already running. The volume label itself updates in place. The world volume is reattached if the VM is replaced, and it is not formatted again if it already has a filesystem. Linode Backups of the old VM are deleted with it.
 
@@ -172,6 +172,80 @@ The default game is Minetest Game, checked out at a pinned commit because the of
 
 The server is `ghcr.io/luanti-org/luanti:5.17.0`, not `:latest`, under systemd (`Restart=always`), so it comes back after a crash or a reboot. World data is on the volume, mounted at `/var/lib/luanti`.
 
+## Adding a mod
+
+List mods in `mods` in `main/terraform.tfvars`. An apply installs them and restarts Luanti. It does not replace the VM, the world volume, the firewall, or DNS. `mods = []` installs nothing.
+
+Luanti 5.17 loads every mod in the world's `worldmods` directory, and every mod inside a modpack placed there, without `load_mod_` lines in `world.mt`. The push checks each repo out under `/var/lib/luanti/mod-src` (outside the world, so the world tarball does not include the git history) and copies the mod files into `worlds/<world_name>/worldmods/<name>`. The copy does not include `.git`. `player_allowlist` stays in `worldmods`. Any other directory there is removed on the next push. The map, player files, and auth database are not touched.
+
+### Finding one
+
+Browse [ContentDB](https://content.luanti.org). This server runs Minetest Game. Use a mod whose page or `mod.conf` says it supports Minetest Game (`minetest_game` / `default`), or whose dependencies are mods Minetest Game already ships (`default`, `stairs`, `beds`, and the rest under `games/minetest_game/mods`). A mod written only for VoxeLibre or Mineclonia will not load here.
+
+Open the package's git repository. `git_url` has to be `https`. `git_ref` is the full 40-character commit SHA, the same kind of pin as `game_git_ref`. Branch names and tags are rejected.
+
+```bash
+git ls-remote https://github.com/minetest-mods/anvil.git HEAD
+```
+
+That prints the current commit. Use that SHA, or clone the repo and pin the commit you actually tried. `anvil` at `9bc6f63af822269c16db69cc0f8e4710207aa1a7` is a small Minetest Game mod (`depends = default`) and is the commented example in `terraform.tfvars.example`.
+
+`name` is the mod name: lowercase letters, digits, and underscores, matching `[a-z0-9_]+`. It must match the `name` in `mod.conf` or `modpack.conf` when that file sets one, and it must not be `player_allowlist`. Names in the list are unique.
+
+Set `subdir` only when the mod or modpack is not the root of the repository (for example the files live in `mods/my_mod`). No leading slash, no `..`. Leave it out when `init.lua` or `modpack.conf` is at the root of the clone.
+
+### Dependencies
+
+The push does not call ContentDB and does not install dependencies for you. If the package page or the `depends` line in `mod.conf` names other mods, add each one as its own entry with its own `git_url` and commit. Mods that are already part of Minetest Game (`default`, `stairs`, `beds`, and the other directories under `games/minetest_game/mods`) are already installed with the game. Do not add those to `mods`. `anvil` depends only on `default`, so the example is a single entry. Optional dependencies can be left out. Mods that ship inside one modpack (a checkout, or a `subdir`, that contains `modpack.conf` or `modpack.txt`) are installed as that single entry; Luanti loads each mod in the pack. Luanti orders loading from those `depends` lines, so the order of `mods` is only the order Terraform writes them.
+
+### Trusted mods
+
+`trusted` defaults to false. `true` appends that entry's `name` to `secure.trusted_mods` after `player_allowlist`. A trusted mod may use the insecure environment (files outside the world, and the other APIs Luanti blocks). Leave it false unless the mod's own documentation says it needs that. For a modpack, the name added is the pack's name. Mods inside the pack are not trusted unless you list those mods themselves and set `trusted` on those entries. Most mods should stay untrusted.
+
+### Removing one
+
+Delete the entry and apply. The push deletes that mod's `worldmods` directory and its checkout, then restarts Luanti. Nodes and items the mod added can stay in the map as unknown nodes. Take a backup first and keep it:
+
+```bash
+ssh root@luanti.rsegebre.com
+luanti-backup
+```
+
+The nightly tarball is the other copy. Put the mod back, or restore the tarball with `luanti-restore`, if the map looks wrong.
+
+### Mods on this server
+
+`main/terraform.tfvars` installs these, all untrusted. A worldmods mod with the same name as a Minetest Game mod overrides the game copy (Luanti logs a conflict warning and loads the worldmods one). Farming Redo uses that: its name is `farming`, and it registers the same wheat, cotton, soil, straw, string, flour, and bread names as Minetest Game farming, so existing nodes stay valid.
+
+| Mod | Repository | Pin |
+| --- | --- | --- |
+| creatura | https://github.com/ElCeejo/creatura | `4eb507cf2433f0787691f560842deea79a1666f4` (default branch `main`; no releases) |
+| animalia | https://github.com/ElCeejo/animalia | `5895f403fd43a9464e06b3675af3495f50565a3f` (default branch `main`; no releases) |
+| i3 | https://github.com/mt-historical/i3 | `6f60b2446f32e2a4d73d80b1f71f58e9b1e4870c` (default branch `main`; no releases) |
+| farming | https://codeberg.org/tenplus1/farming | `fbe17a9fbe2a95003b8b71b98d6bb49d5079dd37` (default branch `master`; no releases) |
+| nether | https://github.com/minetest-mods/nether | `c34722d42678a034e3546cbd6ff9774697f5351b` (release tag `v3.6.3`) |
+
+`creatura` is here because `animalia` hard-depends on it. Nether's hard dependencies (`stairs`, `default`) are already in Minetest Game. Optional dependencies are not installed: animalia's `hunger_ng`, `hbhunger`, `3d_armor`, and `mcl_player`; i3's `3d_armor`, `skinsdb`, and `awards`; Farming Redo's Mineclonia mods, `lucky_block`, and `toolranks`; Nether's `moreblocks`, `mesecons`, `loot`, `dungeon_loot`, `doc_basics`, `climate_api`, `ethereal`, and `toolranks`. Minetest Game already supplies `default`, `stairs`, `flowers`, `fire`, `xpanes`, and `walls`.
+
+None of these call the insecure environment for normal play. i3 asks for the HTTP API and only uses it when that call succeeds and an export URL is set, so it stays untrusted and the export stays off. `player_allowlist` remains the only trusted mod.
+
+Things to expect:
+
+- i3 turns `sfinv` off and becomes the inventory. The player inventory is 9 slots wide (36 slots) unless a player turns on i3's legacy inventory. Minetest Game chests stay 8 wide. `creative_mode` is false. i3 still registers a `creative` privilege; do not grant it unless you want that player in creative. `i3_progressive_mode` stays off unless set in `minetest.conf`.
+- Farming Redo is a drop-in for the wheat and cotton nodes. Growth uses a 200 second stage length when `farming_stage_length` is unset (the setting file documents 160). `farming_use_utensils` defaults on, so some recipes need a cutting board or mortar. Extra crops can appear in the wild, and weeds grow unless `farming_disable_weeds` is set.
+- Animalia and creatura spawn mobs in newly generated chunks. That is extra CPU on this 4 GB Linode. `spawn_mobs` and the spawn-chance settings in animalia's `settingtypes.txt` turn it down. Animalia uses Farming Redo's plant list when farming is loaded.
+- Nether's realm is on by default, from y -5000 to y -11000, with fast travel at factor 8. The first portal generates a large area of map. The pin is release `v3.6.3`, not the later commit that only renames `minetest.` calls to `core.`. On 5.17, `nether:sand` blob ore logs a warning that `noise_params` is missing and falls back to the engine default. The ore still registers.
+
+### If it does not load
+
+On the VM:
+
+```bash
+docker logs luanti 2>&1 | tail -n 100
+```
+
+`journalctl -u luanti.service` shows whether the unit is restarting. The game log is what `docker logs` prints. Look for `ERROR` lines: `ModError`, unsatisfied dependencies, or a mod that failed while its `init.lua` ran. `debug_log_level` is `action`, so the info line `Server: Loading mods:` is not in that log. The apply fails if the server never logs `[player_allowlist] loaded`, which is what happens when mod loading aborts startup. The Actions log includes the last lines `luanti-install` printed.
+
 ## Design notes
 
 These differ from a literal reading of "everything in Fremont" or "config only via cloud-init", with reasons:
@@ -182,6 +256,7 @@ These differ from a literal reading of "everything in Fremont" or "config only v
 - **ICMP from anywhere is allowed.** Path MTU discovery and IPv6 neighbor discovery come from routers, not from the player's address. Dropping them breaks the path even for an allowlisted player. ICMP is not a way to join.
 - **Allowlists are pushed over SSH, not baked into cloud-init.** `metadata.user_data` is applied on create and ignored afterwards, so a name added only there would never reach a VM that already exists. The first boot still uses Linode Metadata user data (cloud-init). Akamai's current docs say Metadata is on in every region, including Fremont, and Ubuntu 24.04 ships the datasource. This repo could not query the live regions API. If create-time API rejects `user_data` in `us-west`, stop and add a StackScript. Do not ignore that error. After the first boot, `cloud-init status` should be `done`. The config push runs `cloud-init status --wait` and, when that reports an error, prints `cloud-init status --long`. The step still succeeds. The push is idempotent and is what repairs a host after a first-boot error.
 - **The join allowlist is a small mod in this repo** (`player_allowlist`), generated from `allowed_player_names`. It uses `core.register_on_prejoinplayer`. A third-party mod would be another supply-chain dependency for a list we already render.
+- **Other mods are installed by the same SSH push, into `worldmods`.** Luanti 5.17 loads every mod there, and every mod inside a modpack, without `load_mod_` entries. A global `mods/` directory would leave them disabled until `world.mt` named each one, and a modpack's inner names are not the single `name` in `mods`. The push keeps git checkouts in `/var/lib/luanti/mod-src` and copies the files into `worldmods` without `.git`. Nothing about the mod list is written into cloud-init. `player_allowlist` is the one `worldmods` directory the push does not delete.
 - **SSH is key-only for root, and there is a sudo user `luantiadmin`.** Password authentication and keyboard-interactive are off. Root's password is locked. The first-boot script creates `/run/sshd` before `sshd -t`. Ubuntu 24.04 socket-activates ssh, so that directory does not exist until `ssh.service` starts, and `sshd -t` otherwise exits with `Missing privilege separation directory`. The reload uses `systemctl try-reload-or-restart` on `ssh.service`, then `sshd.service`, and ignores failure. `ssh.socket` reads the config on the next connection, and the unit is often inactive during first boot. Unattended upgrades install security updates and do not reboot automatically. Schedule a reboot yourself when a kernel update needs one.
 - **IPv6 allowlist entries are a `/64`.** Documented above.
 
@@ -195,7 +270,7 @@ scripts/validate.sh
 
 That runs `terraform fmt -check`, `terraform init -backend=false && terraform validate` in both roots, shellcheck, and `cloud-init schema` on the rendered user-data. It does not call Linode or Cloudflare.
 
-`scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, and checks that the server starts, does not announce, loads the allowlist, accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io and GitHub. It does not call Linode or Cloudflare.
+`scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, exercises `luanti-mods` with `anvil`, then installs the pinned `creatura`, `animalia`, `i3`, `farming`, and `nether` list. It checks that the server starts, does not announce, loads the allowlist, lists each of those mods in `Server: Loading mods:` (`luantiserver --info`), overrides Minetest Game's `farming` with the worldmods copy, accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io, GitHub, and Codeberg. It does not call Linode or Cloudflare.
 
 ## GitHub Actions
 
