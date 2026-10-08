@@ -49,6 +49,6 @@ output "firewall_id" {
 }
 
 output "cloud_init_bytes" {
-  description = "Decoded cloud-init size. Linode user_data must stay well under 64 KiB, and changing it replaces the VM."
+  description = "Decoded cloud-init size. Linode user_data must stay well under 64 KiB. metadata.user_data is ignored after create, so a size change does not replace the VM."
   value       = length(local.cloud_init)
 }

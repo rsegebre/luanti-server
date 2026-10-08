@@ -86,11 +86,18 @@ systemctl enable docker
 systemctl start docker
 systemctl enable unattended-upgrades || true
 
+# Ubuntu 24.04 socket-activates ssh. ssh.service's RuntimeDirectory creates
+# /run/sshd, so that directory does not exist yet while cloud-init is running.
+# sshd -t refuses to check the config without it.
+install -d -m 0755 /run/sshd
+
 if ! sshd -t; then
   echo "sshd rejected the hardened config" >&2
   exit 1
 fi
 
-if ! systemctl reload ssh; then
-  systemctl reload sshd
-fi
+# ssh.socket reads sshd_config on the next connection. The service is often
+# inactive here; a reload of an inactive unit must not fail first boot.
+systemctl try-reload-or-restart ssh.service \
+  || systemctl try-reload-or-restart sshd.service \
+  || true

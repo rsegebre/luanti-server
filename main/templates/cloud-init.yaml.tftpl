@@ -1,6 +1,7 @@
 #cloud-config
-# First boot only. Player allowlists are not in this file: Linode marks
-# metadata user_data ForceNew, so editing it would replace the VM.
+# First boot only. Player allowlists are not in this file; they are pushed
+# over SSH after boot. metadata.user_data is ForceNew and ignored after
+# create, so later edits do not replace the VM and do not re-run here.
 hostname: ${hostname_short}
 fqdn: ${fqdn}
 manage_etc_hosts: true
