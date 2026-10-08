@@ -37,6 +37,7 @@ locals {
     max_users     = 8
     creative_mode = false
     enable_damage = true
+    trusted_mods  = "player_allowlist"
   })
 
   world_mt = templatefile("${var.root}/main/templates/world.mt.tftpl", {

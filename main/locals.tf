@@ -24,6 +24,13 @@ locals {
     host_bootstrap = file("${path.module}/files/host-bootstrap.sh")
   })
 
+  # player_allowlist stays first. Trusted mod names follow, in list order.
+  # With no trusted mods this is the single token the template already used.
+  trusted_mods = join(",", concat(
+    ["player_allowlist"],
+    [for mod in var.mods : mod.name if mod.trusted],
+  ))
+
   minetest_conf = templatefile("${path.module}/templates/minetest.conf.tftpl", {
     server_name   = var.server_name
     motd          = var.motd
@@ -33,6 +40,7 @@ locals {
     max_users     = var.max_users
     creative_mode = var.creative_mode
     enable_damage = var.enable_damage
+    trusted_mods  = local.trusted_mods
   })
 
   world_mt = templatefile("${path.module}/templates/world.mt.tftpl", {
@@ -52,7 +60,8 @@ locals {
     author = rsegebre
   EOT
 
-  server_env = <<-EOT
+  # Kept byte-for-byte when mods is empty so the config push is not replaced.
+  server_env_base = <<-EOT
     LUANTI_IMAGE="${var.luanti_image}"
     LUANTI_PORT="${var.luanti_port}"
     GAME_ID="${var.game_id}"
@@ -64,6 +73,21 @@ locals {
     BACKUP_RETENTION="${var.backup_retention_count}"
     BACKUP_BUCKET="${var.backups_bucket_label}"
   EOT
+
+  # One manifest line per mod: name, https URL, commit, subdir (`.` is the repo root).
+  mods_lines = [
+    for mod in var.mods :
+    "${mod.name} ${mod.git_url} ${mod.git_ref} ${mod.subdir == "" ? "." : mod.subdir}"
+  ]
+
+  mods_manifest = join("\n", concat(["# name git_url git_ref subdir"], local.mods_lines, [""]))
+
+  # Included in server_env only when at least one mod is listed. The hash covers
+  # the manifest and the installer script, so a script fix re-runs the push
+  # while mods are in use. An empty list leaves server_env equal to server_env_base.
+  mods_sha = sha256("${join("\n", local.mods_lines)}\n${filesha256("${path.module}/files/luanti-mods.sh")}")
+
+  server_env = length(var.mods) == 0 ? local.server_env_base : "${local.server_env_base}MODS_SHA256=${local.mods_sha}\n"
 
   rclone_conf = templatefile("${path.module}/templates/rclone.conf.tftpl", {
     access_key = var.backups_access_key

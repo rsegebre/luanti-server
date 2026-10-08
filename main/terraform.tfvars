@@ -64,6 +64,21 @@ game_git_url = "https://github.com/luanti-org/minetest_game.git"
 game_git_ref = "c42e4d0c0ff9d27ff7b9b308c3cfc14098dd3a0f"
 world_name   = "world"
 
+# Mods and modpacks installed into the world's worldmods directory on apply.
+# git_ref is a full 40-character commit SHA. Adding or removing one restarts
+# Luanti and does not replace the VM or the volume. List dependencies as their
+# own entries. See "Adding a mod" in the README.
+# mods = [
+#   {
+#     name    = "anvil"
+#     git_url = "https://github.com/minetest-mods/anvil.git"
+#     git_ref = "9bc6f63af822269c16db69cc0f8e4710207aa1a7"
+#     # subdir  = "anvil" # only when the mod is not at the repository root
+#     # trusted = false   # true appends the name to secure.trusted_mods
+#   },
+# ]
+mods = []
+
 server_name   = "Private"
 motd          = "Private server for invited players. Ask the owner if you need an account."
 max_users     = 8

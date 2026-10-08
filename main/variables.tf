@@ -229,6 +229,60 @@ variable "game_git_ref" {
   default     = "c42e4d0c0ff9d27ff7b9b308c3cfc14098dd3a0f"
 }
 
+variable "mods" {
+  type = list(object({
+    name    = string
+    git_url = string
+    git_ref = string
+    subdir  = optional(string, "")
+    trusted = optional(bool, false)
+  }))
+  description = "Mods and modpacks to install into the world's worldmods directory when the config push runs. git_ref is a full commit SHA. subdir is the path inside the repo when the mod or modpack is not at the root. trusted appends the name to secure.trusted_mods. Empty installs nothing and does not by itself re-run the push."
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for mod in var.mods :
+      can(regex("^[a-z0-9_]+$", mod.name)) && mod.name != "player_allowlist"
+    ])
+    error_message = "Each mod name must match [a-z0-9_]+ and must not be player_allowlist."
+  }
+
+  validation {
+    condition     = length(var.mods) == length(distinct([for mod in var.mods : mod.name]))
+    error_message = "Mod names must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for mod in var.mods : can(regex("^[0-9a-f]{40}$", mod.git_ref))
+    ])
+    error_message = "Each git_ref must be a full 40-character lowercase commit SHA."
+  }
+
+  validation {
+    condition = alltrue([
+      for mod in var.mods :
+      can(regex("^https://[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(:[0-9]{1,5})?/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$", mod.git_url))
+    ])
+    error_message = "Each git_url must be an https URL with a hostname and a path."
+  }
+
+  validation {
+    condition = alltrue([
+      for mod in var.mods :
+      mod.subdir == "" || (
+        can(regex("^[A-Za-z0-9._/-]+$", mod.subdir)) &&
+        !startswith(mod.subdir, "/") &&
+        !endswith(mod.subdir, "/") &&
+        !strcontains(mod.subdir, "..") &&
+        !strcontains(mod.subdir, "//")
+      )
+    ])
+    error_message = "subdir must be empty or a relative path inside the repository, with no .. segment."
+  }
+}
+
 variable "world_name" {
   type        = string
   description = "World directory name. Changing it starts a new world and leaves the old directory on the volume."

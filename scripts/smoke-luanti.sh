@@ -8,7 +8,10 @@ render="${root}/.rendered/smoke"
 image="ghcr.io/luanti-org/luanti:5.17.0"
 game_url="https://github.com/luanti-org/minetest_game.git"
 game_ref="c42e4d0c0ff9d27ff7b9b308c3cfc14098dd3a0f"
+anvil_url="https://github.com/minetest-mods/anvil.git"
+anvil_ref="9bc6f63af822269c16db69cc0f8e4710207aa1a7"
 container="luanti-smoke"
+worldmods="${render}/data/.minetest/worlds/world/worldmods"
 
 if ! docker info >/dev/null 2>&1; then
   echo "docker is not reachable" >&2
@@ -50,6 +53,71 @@ if [[ ! -f "${game}/game.conf" ]]; then
   fi
 fi
 
+# anvil is a small Minetest Game mod (depends on default, which this game ships).
+# The installer is the same script the config push runs.
+cat >"$render/server.env" <<'EOF'
+WORLD_NAME=world
+EOF
+
+run_mods() {
+  LUANTI_SERVER_ENV="$render/server.env" \
+    LUANTI_ROOT="$render" \
+    LUANTI_MODS_MANIFEST="$render/mods.manifest" \
+    LUANTI_LOCK_FILE="$render/luanti-admin.lock" \
+    "$root/main/files/luanti-mods.sh"
+}
+
+printf '%s\n' "# name git_url git_ref subdir" >"$render/mods.manifest"
+mkdir -p "$worldmods/left_behind"
+run_mods
+if [[ -d "$worldmods/left_behind" ]]; then
+  echo "smoke: installer left an unlisted worldmods directory in place" >&2
+  exit 1
+fi
+if [[ ! -d "$worldmods/player_allowlist" ]]; then
+  echo "smoke: installer removed player_allowlist" >&2
+  exit 1
+fi
+
+cat >"$render/mods.manifest" <<EOF
+# name git_url git_ref subdir
+player_allowlist ${anvil_url} ${anvil_ref} .
+EOF
+if run_mods; then
+  echo "smoke: installer accepted player_allowlist" >&2
+  exit 1
+fi
+
+cat >"$render/mods.manifest" <<EOF
+# name git_url git_ref subdir
+anvil ${anvil_url} ${anvil_ref} .
+EOF
+run_mods
+if [[ ! -f "$worldmods/anvil/init.lua" ]]; then
+  echo "smoke: anvil was not installed" >&2
+  exit 1
+fi
+if [[ -d "$worldmods/anvil/.git" ]]; then
+  echo "smoke: anvil copy contains .git" >&2
+  exit 1
+fi
+run_mods
+printf '%s\n' "# name git_url git_ref subdir" >"$render/mods.manifest"
+run_mods
+if [[ -d "$worldmods/anvil" || -d "$render/mod-src/anvil" ]]; then
+  echo "smoke: removing anvil from the manifest left it installed" >&2
+  exit 1
+fi
+if [[ ! -d "$worldmods/player_allowlist" ]]; then
+  echo "smoke: removing mods also removed player_allowlist" >&2
+  exit 1
+fi
+cat >"$render/mods.manifest" <<EOF
+# name git_url git_ref subdir
+anvil ${anvil_url} ${anvil_ref} .
+EOF
+run_mods
+
 docker pull "$image"
 docker rm -f "$container" >/dev/null 2>&1 || true
 
@@ -68,7 +136,8 @@ docker run \
   "$image" \
   --config /etc/minetest/minetest.conf \
   --gameid minetest_game \
-  --worldname world
+  --worldname world \
+  --info
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -92,6 +161,11 @@ done
 printf '%s\n' "$logs" | tail -n 40
 if [[ "$ready" != 1 ]]; then
   echo "smoke: allowlist mod did not load" >&2
+  exit 1
+fi
+if ! grep -F 'Server: Loading mods:' <<<"$logs" | grep -Eq '(^| )anvil( |$)'; then
+  echo "smoke: anvil was not in the Server: Loading mods list (--info)" >&2
+  printf '%s\n' "$logs" | tail -n 80 >&2
   exit 1
 fi
 if grep -F -e 'Announcing start to' -e 'Announcing update to' <<<"$logs" >/dev/null; then
@@ -145,4 +219,4 @@ if ! grep -F -q "[player_allowlist] rejected name 'NotAFriend'" <<<"$logs"; then
   exit 1
 fi
 
-echo "smoke: server started, did not announce, loaded the allowlist, set a password, and rejected NotAFriend"
+echo "smoke: server started, did not announce, loaded the allowlist and anvil, set a password, and rejected NotAFriend"
