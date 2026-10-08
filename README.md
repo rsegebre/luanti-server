@@ -188,7 +188,7 @@ Open the package's git repository. `git_url` has to be `https`. `git_ref` is the
 git ls-remote https://github.com/minetest-mods/anvil.git HEAD
 ```
 
-That prints the current commit. Use that SHA, or clone the repo and pin the commit you actually tried. `anvil` at `9bc6f63af822269c16db69cc0f8e4710207aa1a7` is a small Minetest Game mod (`depends = default`) and is the commented example in `terraform.tfvars`.
+That prints the current commit. Use that SHA, or clone the repo and pin the commit you actually tried. `anvil` at `9bc6f63af822269c16db69cc0f8e4710207aa1a7` is a small Minetest Game mod (`depends = default`) and is the commented example in `terraform.tfvars.example`.
 
 `name` is the mod name: lowercase letters, digits, and underscores, matching `[a-z0-9_]+`. It must match the `name` in `mod.conf` or `modpack.conf` when that file sets one, and it must not be `player_allowlist`. Names in the list are unique.
 
@@ -212,6 +212,29 @@ luanti-backup
 ```
 
 The nightly tarball is the other copy. Put the mod back, or restore the tarball with `luanti-restore`, if the map looks wrong.
+
+### Mods on this server
+
+`main/terraform.tfvars` installs these, all untrusted. A worldmods mod with the same name as a Minetest Game mod overrides the game copy (Luanti logs a conflict warning and loads the worldmods one). Farming Redo uses that: its name is `farming`, and it registers the same wheat, cotton, soil, straw, string, flour, and bread names as Minetest Game farming, so existing nodes stay valid.
+
+| Mod | Repository | Pin |
+| --- | --- | --- |
+| creatura | https://github.com/ElCeejo/creatura | `4eb507cf2433f0787691f560842deea79a1666f4` (default branch `main`; no releases) |
+| animalia | https://github.com/ElCeejo/animalia | `5895f403fd43a9464e06b3675af3495f50565a3f` (default branch `main`; no releases) |
+| i3 | https://github.com/mt-historical/i3 | `6f60b2446f32e2a4d73d80b1f71f58e9b1e4870c` (default branch `main`; no releases) |
+| farming | https://codeberg.org/tenplus1/farming | `fbe17a9fbe2a95003b8b71b98d6bb49d5079dd37` (default branch `master`; no releases) |
+| nether | https://github.com/minetest-mods/nether | `c34722d42678a034e3546cbd6ff9774697f5351b` (release tag `v3.6.3`) |
+
+`creatura` is here because `animalia` hard-depends on it. Nether's hard dependencies (`stairs`, `default`) are already in Minetest Game. Optional dependencies are not installed: animalia's `hunger_ng`, `hbhunger`, `3d_armor`, and `mcl_player`; i3's `3d_armor`, `skinsdb`, and `awards`; Farming Redo's Mineclonia mods, `lucky_block`, and `toolranks`; Nether's `moreblocks`, `mesecons`, `loot`, `dungeon_loot`, `doc_basics`, `climate_api`, `ethereal`, and `toolranks`. Minetest Game already supplies `default`, `stairs`, `flowers`, `fire`, `xpanes`, and `walls`.
+
+None of these call the insecure environment for normal play. i3 asks for the HTTP API and only uses it when that call succeeds and an export URL is set, so it stays untrusted and the export stays off. `player_allowlist` remains the only trusted mod.
+
+Things to expect:
+
+- i3 turns `sfinv` off and becomes the inventory. The player inventory is 9 slots wide (36 slots) unless a player turns on i3's legacy inventory. Minetest Game chests stay 8 wide. `creative_mode` is false. i3 still registers a `creative` privilege; do not grant it unless you want that player in creative. `i3_progressive_mode` stays off unless set in `minetest.conf`.
+- Farming Redo is a drop-in for the wheat and cotton nodes. Growth uses a 200 second stage length when `farming_stage_length` is unset (the setting file documents 160). `farming_use_utensils` defaults on, so some recipes need a cutting board or mortar. Extra crops can appear in the wild, and weeds grow unless `farming_disable_weeds` is set.
+- Animalia and creatura spawn mobs in newly generated chunks. That is extra CPU on this 4 GB Linode. `spawn_mobs` and the spawn-chance settings in animalia's `settingtypes.txt` turn it down. Animalia uses Farming Redo's plant list when farming is loaded.
+- Nether's realm is on by default, from y -5000 to y -11000, with fast travel at factor 8. The first portal generates a large area of map. The pin is release `v3.6.3`, not the later commit that only renames `minetest.` calls to `core.`. On 5.17, `nether:sand` blob ore logs a warning that `noise_params` is missing and falls back to the engine default. The ore still registers.
 
 ### If it does not load
 
@@ -247,7 +270,7 @@ scripts/validate.sh
 
 That runs `terraform fmt -check`, `terraform init -backend=false && terraform validate` in both roots, shellcheck, and `cloud-init schema` on the rendered user-data. It does not call Linode or Cloudflare.
 
-`scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, installs `anvil` at a pinned commit with `luanti-mods`, and checks that the server starts, does not announce, loads the allowlist, lists `anvil` in `Server: Loading mods:` (`luantiserver --info`), accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io and GitHub. It does not call Linode or Cloudflare.
+`scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, exercises `luanti-mods` with `anvil`, then installs the pinned `creatura`, `animalia`, `i3`, `farming`, and `nether` list. It checks that the server starts, does not announce, loads the allowlist, lists each of those mods in `Server: Loading mods:` (`luantiserver --info`), overrides Minetest Game's `farming` with the worldmods copy, accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io, GitHub, and Codeberg. It does not call Linode or Cloudflare.
 
 ## GitHub Actions
 
