@@ -1,0 +1,6 @@
+[Unit]
+Description=Luanti world tarball
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/luanti-backup

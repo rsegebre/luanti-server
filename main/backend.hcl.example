@@ -1,0 +1,17 @@
+# Shape only. After bootstrap, prefer the generated file:
+#   terraform -chdir=bootstrap output -raw backend_config_hcl > main/backend.hcl
+# The endpoint below is the generally available Seattle E1 hostname. If bootstrap
+# prints a different state_s3_endpoint_host, use that instead.
+
+bucket                      = "rsegebre-luanti-tfstate"
+key                         = "luanti/terraform.tfstate"
+region                      = "us-east-1"
+use_path_style              = true
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+skip_region_validation      = true
+skip_s3_checksum            = true
+endpoints = {
+  s3 = "https://us-sea-1.linodeobjects.com"
+}

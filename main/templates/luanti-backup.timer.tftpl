@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Luanti world backup
+
+[Timer]
+OnCalendar=${calendar}
+Persistent=true
+Unit=luanti-backup.service
+
+[Install]
+WantedBy=timers.target
