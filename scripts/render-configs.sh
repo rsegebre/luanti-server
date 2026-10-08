@@ -18,7 +18,7 @@ variable "root" {
 }
 
 locals {
-  names = ["admin"]
+  names = ["rss1989"]
 
   cloud_init = templatefile("${var.root}/main/templates/cloud-init.yaml.tftpl", {
     hostname_short = "luanti"
@@ -32,7 +32,7 @@ locals {
     server_name   = "Private"
     motd          = "Private server for invited players. Ask the owner if you need an account."
     port          = 30000
-    admin_name    = "admin"
+    admin_name    = "rss1989"
     default_privs = "interact,shout"
     max_users     = 8
     creative_mode = false

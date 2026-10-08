@@ -99,7 +99,7 @@ if grep -F -e 'Announcing start to' -e 'Announcing update to' <<<"$logs" >/dev/n
   exit 1
 fi
 
-printf 'admin\tsmoke-test-secret\n' >"$render/password-drop/pending"
+printf 'rss1989\tsmoke-test-secret\n' >"$render/password-drop/pending"
 chown 30000:30000 "$render/password-drop/pending"
 chmod 0600 "$render/password-drop/pending"
 password_ok=0
@@ -117,7 +117,7 @@ if [[ "$password_ok" != 1 ]]; then
 fi
 result="$(cat "$render/password-drop/pending.result")"
 printf 'password result: %s\n' "$result"
-if [[ "$result" != "ok admin" ]]; then
+if [[ "$result" != "ok rss1989" ]]; then
   echo "smoke: unexpected password result" >&2
   exit 1
 fi
@@ -133,7 +133,7 @@ if any('"' in priv or priv.startswith(" ") for priv in privs):
     sys.exit("privilege names include quotes or spaces; minetest.conf values were parsed wrong")
 for required in ("interact", "shout", "privs", "server", "ban"):
     if required not in privs:
-        sys.exit(f"admin is missing privilege {required}")
+        sys.exit(f"rss1989 is missing privilege {required}")
 PY
 
 python3 "$root/scripts/luanti_probe.py" 127.0.0.1 30000 NotAFriend

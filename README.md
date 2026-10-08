@@ -119,7 +119,11 @@ Three separate gates, and a friend needs all three:
 
    The command prompts twice, writes a one-shot file the allowlist mod consumes, and the mod stores a password hash in the world auth database. The password is not in Terraform, shell history, or the backup tarball. `disallow_empty_password` is on, and `default_privs` is `interact,shout`.
 
-   `admin_player_name` (default `admin`) also receives the usual admin privileges the first time you set that password. Set the admin password the same way before you play.
+   `rss1989` (`admin_player_name`) also receives the usual admin privileges the first time you set that password. Set it before you play:
+
+   ```bash
+   luanti-setpassword rss1989
+   ```
 
 ## Updating a home IP
 
@@ -264,7 +268,7 @@ Non-secret inputs (home CIDRs, player names, both public keys, game pin, backup 
 4. Create the repository secrets and variables in the table above.
 5. Merge the pull request.
 6. Open the Actions run for that push and approve the `production` deployment.
-7. After it finishes, the cleanup step should have removed the runner SSH rule. From home, `ssh root@luanti.rsegebre.com` and run `luanti-setpassword` for the admin name.
+7. After it finishes, the cleanup step should have removed the runner SSH rule. From home, `ssh root@luanti.rsegebre.com` and run `luanti-setpassword rss1989`.
 
 ## Credentials you must supply
 

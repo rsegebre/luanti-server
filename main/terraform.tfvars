@@ -49,7 +49,7 @@ player_cidrs = [
   "2601:647:5b00:66a0::/64",
 ]
 
-admin_player_name    = "admin"
+admin_player_name    = "rss1989"
 allowed_player_names = []
 
 luanti_image = "ghcr.io/luanti-org/luanti:5.17.0"

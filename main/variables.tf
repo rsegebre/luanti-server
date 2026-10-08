@@ -172,8 +172,8 @@ variable "player_cidrs" {
 
 variable "admin_player_name" {
   type        = string
-  description = "Luanti account that receives admin privileges. Always included in the join allowlist. Set with the name setting so the engine treats this player as admin."
-  default     = "admin"
+  description = "Luanti account that receives admin privileges. Always included in the join allowlist. Set with the name setting so the engine treats this player as admin. This server uses rss1989."
+  default     = "rss1989"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9_-]{1,20}$", var.admin_player_name))
