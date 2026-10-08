@@ -38,7 +38,10 @@ resource "terraform_data" "runtime_config" {
 
   provisioner "remote-exec" {
     inline = [
-      "cloud-init status --wait",
+      # cloud-init status --wait exits non-zero when first boot ended in
+      # error. Print the long status and continue. The push is idempotent
+      # and is what fixes a host after that error. Do not fail the apply.
+      "cloud-init status --wait || cloud-init status --long || true",
       "mkdir -p /etc/luanti /usr/local/sbin /var/lib/luanti/password-drop /var/lib/luanti/backups",
       "mkdir -p /var/lib/luanti/data/.minetest/worlds/${var.world_name}/worldmods/player_allowlist",
       "install -d -m 0700 /root/.ssh",

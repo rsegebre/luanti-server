@@ -24,7 +24,7 @@ variable "instance_type" {
 
 variable "instance_label" {
   type        = string
-  description = "Linode display label and short hostname. Changing the SSH key or cloud-init (which embeds this label's sudo user and volume label) replaces the VM. The world volume is separate."
+  description = "Linode display label and short hostname used in first-boot cloud-init. metadata.user_data is ignored after create, so changing this label does not replace the VM. The hostname on an already-booted VM is not rewritten. The world volume is separate."
   default     = "luanti"
 
   validation {
@@ -64,7 +64,7 @@ variable "swap_size" {
 
 variable "world_volume_label" {
   type        = string
-  description = "Block Storage volume label. Baked into cloud-init's device path, so renaming it replaces the VM and tries to replace the volume."
+  description = "Block Storage volume label. The bootstrap script looks the device up by this name. metadata.user_data is ignored after create, so renaming it does not replace the VM and does not rewrite the device path on an already-booted host. The volume label itself updates in place."
   default     = "luanti-world"
 
   validation {
@@ -139,7 +139,7 @@ variable "ci_ssh_cidrs" {
 
 variable "sudo_user" {
   type        = string
-  description = "Non-root sudo account created on first boot. Also baked into cloud-init, so renaming it replaces the VM."
+  description = "Non-root sudo account created on first boot and embedded in cloud-init. metadata.user_data is ignored after create, so renaming it does not replace the VM and does not create a new account on the existing host."
   default     = "luantiadmin"
 
   validation {

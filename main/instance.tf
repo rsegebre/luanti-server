@@ -16,12 +16,20 @@ resource "linode_instance" "luanti" {
   # authorized_keys is also ForceNew. Ignore it after create so adding or
   # rotating a key updates the files on disk instead of replacing the VM.
   # The first create still writes this list into /root/.ssh/authorized_keys.
+  # metadata.user_data is ignored after create for the same reason: the
+  # bootstrap script is embedded in cloud-init, and editing it must not
+  # replace the VM. A later create, if the instance is replaced for another
+  # reason, still receives the current user_data. Cloud-init does not re-run
+  # on the existing host.
   metadata {
     user_data = base64encode(local.cloud_init)
   }
 
   lifecycle {
-    ignore_changes = [authorized_keys]
+    ignore_changes = [
+      authorized_keys,
+      metadata[0].user_data,
+    ]
   }
 
   timeouts {
