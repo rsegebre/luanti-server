@@ -1,0 +1,19 @@
+[Unit]
+Description=Luanti private server
+After=docker.service network-online.target local-fs.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=90
+EnvironmentFile=/etc/luanti/server.env
+ExecStartPre=-/usr/bin/docker rm -f luanti
+ExecStart=/usr/local/sbin/luanti-run
+ExecStop=/usr/bin/docker stop -t 60 luanti
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Terraform local state, caches, and crash logs
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+
+# Real inputs. Examples are named *.tfvars.example and stay tracked.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Generated from bootstrap output. Contains the bucket endpoint, not the secret key,
+# but it is environment-specific.
+backend.hcl
+
+# Local overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Smoke-test render directory
+.rendered/

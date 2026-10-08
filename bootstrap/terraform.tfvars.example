@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars only if you need to override a default.
+# Defaults match the approved design. No secrets live in this root's inputs;
+# the Object Storage secret keys are created here and printed as sensitive outputs.
+
+object_storage_region = "us-sea"
+state_bucket_label    = "rsegebre-luanti-tfstate"
+backups_bucket_label  = "rsegebre-luanti-backups"
+state_key_label       = "luanti-terraform-state"
+backups_key_label     = "luanti-world-backups"
