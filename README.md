@@ -42,7 +42,7 @@ bootstrap/          local-state root: buckets and keys (manual, once)
 main/               S3-backend root: VM, firewall, DNS, config push
 main/files/         scripts and systemd units installed on the VM
 main/templates/     cloud-init, minetest.conf, allowlist mod
-.github/workflows/  plan on pull requests, apply on main
+.github/workflows/  plan on pull requests, apply on main, weekly stats
 scripts/            local helpers and CI checks
 ```
 
@@ -99,6 +99,8 @@ Changing a player CIDR or an admin CIDR updates the firewall in place. It does n
 Changing the allowlist, the mod list, the game pin, the port, or backup settings re-runs the SSH push and restarts Luanti. The world directory is kept. An empty `mods` list does not by itself re-run that push.
 
 SSH public keys are not in cloud-init. `authorized_keys` and `metadata.user_data` are both ForceNew, and both are ignored after the first create. Adding or rotating an SSH key, and editing cloud-init (including `main/files/host-bootstrap.sh`, which the template embeds), do not replace the VM. The first create still installs the current keys and user data. A VM replaced for some other reason is created with the current values. The config push rewrites `authorized_keys` on disk. Cloud-init does not re-run on an existing VM, so a bootstrap-script fix applies on the next instance, not by rewriting user data in place. Renaming `sudo_user` or `world_volume_label` likewise does not replace the VM, and it does not create a new account or rewrite the device path on the host that is already running. The volume label itself updates in place. The world volume is reattached if the VM is replaced, and it is not formatted again if it already has a filesystem. Linode Backups of the old VM are deleted with it.
+
+Changing `stats_ssh_public_key` re-runs that same config push. It creates or updates the `luantistats` account and restarts Luanti. It does not replace the VM. Renaming `stats_user` does not delete the old account.
 
 `terraform destroy` will not delete the volume until you remove `prevent_destroy` from `linode_volume.world`. Do that only when you mean to delete the world.
 
@@ -258,6 +260,7 @@ These differ from a literal reading of "everything in Fremont" or "config only v
 - **The join allowlist is a small mod in this repo** (`player_allowlist`), generated from `allowed_player_names`. It uses `core.register_on_prejoinplayer`. A third-party mod would be another supply-chain dependency for a list we already render.
 - **Other mods are installed by the same SSH push, into `worldmods`.** Luanti 5.17 loads every mod there, and every mod inside a modpack, without `load_mod_` entries. A global `mods/` directory would leave them disabled until `world.mt` named each one, and a modpack's inner names are not the single `name` in `mods`. The push keeps git checkouts in `/var/lib/luanti/mod-src` and copies the files into `worldmods` without `.git`. Nothing about the mod list is written into cloud-init. `player_allowlist` is the one `worldmods` directory the push does not delete.
 - **SSH is key-only for root, and there is a sudo user `luantiadmin`.** Password authentication and keyboard-interactive are off. Root's password is locked. The first-boot script creates `/run/sshd` before `sshd -t`. Ubuntu 24.04 socket-activates ssh, so that directory does not exist until `ssh.service` starts, and `sshd -t` otherwise exits with `Missing privilege separation directory`. The reload uses `systemctl try-reload-or-restart` on `ssh.service`, then `sshd.service`, and ignores failure. `ssh.socket` reads the config on the next connection, and the unit is often inactive during first boot. Unattended upgrades install security updates and do not reboot automatically. Schedule a reboot yourself when a kernel update needs one.
+- **`luantistats` is a third SSH user, and it is not an admin.** `AllowUsers` is `root`, `luantiadmin`, and `luantistats`. The stats user is not in the `sudo` or `docker` groups. Its only key is a forced command (`command="/usr/local/sbin/luanti-weekly-logs"`, plus `no-port-forwarding`, `no-pty`, `no-agent-forwarding`, and `no-X11-forwarding`). The script prints join, leave, and allowlist-rejection lines from the journal. It reaches the journal through one sudoers rule for that path with no arguments, because `docker logs` does not keep a week of history: the container is `--rm` and the nightly backup restarts it. Cloud-init creates the account on the next VM. The config push creates it on the VM that is already running. The shell is bash because sshd runs a forced command through the login shell, and `nologin` would refuse the connection.
 - **IPv6 allowlist entries are a `/64`.** Documented above.
 
 DNS is looked up by zone name. Only the A and AAAA for `luanti.rsegebre.com` are managed, both with `proxied = false`. The Cloudflare proxy does not carry this UDP traffic.
@@ -268,13 +271,13 @@ DNS is looked up by zone name. Only the A and AAAA for `luanti.rsegebre.com` are
 scripts/validate.sh
 ```
 
-That runs `terraform fmt -check`, `terraform init -backend=false && terraform validate` in both roots, shellcheck, and `cloud-init schema` on the rendered user-data. It does not call Linode or Cloudflare.
+That runs `terraform fmt -check`, `terraform init -backend=false && terraform validate` in both roots, shellcheck, and `cloud-init schema` on the rendered user-data. It also runs the weekly-stats parser self-test and the firewall plan check self-test. It does not call Linode or Cloudflare.
 
 `scripts/smoke-luanti.sh` pulls `ghcr.io/luanti-org/luanti:5.17.0`, renders the config with Terraform, exercises `luanti-mods` with `anvil`, then installs the pinned `creatura`, `animalia`, `i3`, `farming`, and `nether` list. It checks that the server starts, does not announce, loads the allowlist, lists each of those mods in `Server: Loading mods:` (`luantiserver --info`), overrides Minetest Game's `farming` with the worldmods copy, accepts a password drop, and rejects a name that is not on the list. It needs Docker and outbound access to ghcr.io, GitHub, and Codeberg. It does not call Linode or Cloudflare.
 
 ## GitHub Actions
 
-Workflow: `.github/workflows/terraform-main.yml`.
+Workflow: `.github/workflows/terraform-main.yml`. The weekly report is `.github/workflows/luanti-weekly-stats.yml`, described under "Weekly player activity".
 
 - Pull requests that touch `main/` or this workflow run `scripts/validate.sh` and `terraform plan`. The plan is posted as one pull-request comment (the same comment is updated on later commits). `ci_ssh_cidrs` is empty in that plan. Terraform redacts sensitive values, and a check refuses to post the comment if a configured secret still appears in the text.
 - A push to `main` that touches those paths runs the same validate, then `terraform apply`, in the `production` environment. Approve that deployment or the apply does not start.
@@ -296,6 +299,8 @@ The runner's public IP changes every job, so it is not something to commit into 
 Instead, `ci_ssh_cidrs` is a Terraform variable that defaults to empty and only accepts a single host (`/32` or `/128`). The apply step looks up the runner's IPv4, checks it is one address, and sets `TF_VAR_ci_ssh_cidrs` to that `/32` for the apply. The firewall is updated before the SSH push because the push depends on it. The same job then runs `terraform apply -target=linode_firewall.luanti` with the variable set back to `[]`. That step is `if: always()` and still runs when the apply fails or is cancelled, as long as the apply step actually started. It does not SSH. When it succeeds, state matches the committed config: no runner rule, and no drift.
 
 If that cleanup apply also fails, the runner `/32` stays on the firewall until a later apply succeeds. GitHub reuses those addresses, so treat a failed cleanup as something to clear. The rule is SSH only, not Luanti.
+
+The weekly stats workflow uses the same `ci_ssh_cidrs` variable and the same concurrency group. It never runs a full apply. It plans `linode_firewall.luanti` only, and it applies that saved plan only when the only change is the runner `/32` on the SSH allowlist. See "Weekly player activity".
 
 ### Deploy key
 
@@ -332,8 +337,9 @@ Create these before you merge. Repository secrets are available to the plan job.
 | `TF_STATE_BUCKET` | Repository variable | Settings → Secrets and variables → Actions → Variables | Bootstrap output `state_bucket_label` |
 | `TF_STATE_ENDPOINT_HOST` | Repository variable | same | Bootstrap output `state_s3_endpoint_host`, hostname only |
 | `DEPLOY_SSH_PRIVATE_KEY` | Environment secret on `production` | Settings → Environments → production → Environment secrets | Contents of the deploy private key file |
+| `STATS_SSH_PRIVATE_KEY` | Environment secret on `luanti-stats` | Settings → Environments → luanti-stats → Environment secrets | Contents of the weekly stats private key. Not the deploy key. This environment has no required reviewer. |
 
-Non-secret inputs (home CIDRs, player names, both public keys, game pin, backup bucket label, backups endpoint) live in `main/terraform.tfvars` and change through pull requests.
+Non-secret inputs (home CIDRs, player names, the admin, deploy, and stats public keys, game pin, backup bucket label, backups endpoint) live in `main/terraform.tfvars` and change through pull requests.
 
 ### First apply
 
@@ -344,6 +350,46 @@ Non-secret inputs (home CIDRs, player names, both public keys, game pin, backup 
 5. Merge the pull request.
 6. Open the Actions run for that push and approve the `production` deployment.
 7. After it finishes, the cleanup step should have removed the runner SSH rule. From home, `ssh root@luanti.rsegebre.com` and run `luanti-setpassword rss1989`.
+
+## Weekly player activity
+
+Workflow: `.github/workflows/luanti-weekly-stats.yml`.
+
+It runs every Monday at 02:30 UTC (`30 2 * * 1`) and from the Actions tab (`workflow_dispatch`). GitHub sometimes starts a scheduled run later than that clock time. The job does not use the `production` environment, so it does not wait for a reviewer and it cannot read `DEPLOY_SSH_PRIVATE_KEY`. It uses the `luanti-stats` environment. It shares the `luanti-main` concurrency group with the deploy workflow, so the two cannot apply at the same time, and neither cancels the other.
+
+The job reads the runner's public IPv4, plans only `linode_firewall.luanti` with `ci_ssh_cidrs` set to that `/32`, and applies the saved plan only if the only change is adding that host to the SSH allowlist. It then SSHes as `luantistats`. The forced command prints the last seven days of join lines (`joins game. List of players:`), leave lines (`leaves game. List of players:`), and `[player_allowlist] rejected name` lines. A later step in the same job, `if: always()`, plans the firewall again with `ci_ssh_cidrs` empty and applies that saved plan only if the only change is removing the same `/32`. If either plan would change a player rule, DNS, the VM, or any other firewall attribute, the job stops without applying it. A `/32` left behind by a failed close is removed by the next normal apply, which runs with `ci_ssh_cidrs` empty. The weekly job will not delete it on its own if that address is not the current runner, and it will not remove an address that is already in `admin_cidrs`.
+
+The report is `luanti-weekly-stats.json`. The run uploads it as the artifact `luanti-weekly-stats` (kept 30 days) and writes the same JSON to the job summary. For each player it counts sessions and play minutes. A join followed by a leave is one session. A second join closes the open session at that time. A leave with no join in the window counts from the start of the window. A join with no leave counts until the report time. `rejected_joins` counts names the allowlist mod rejected. The JSON does not include IP addresses or the raw log.
+
+### One-time setup
+
+Do this before you approve the production deploy, so that one apply creates the user and installs the key. The keypair is not the deploy key and not your personal key.
+
+1. Generate a key pair:
+
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-luanti-stats" -f stats_key -N ""
+   ```
+
+2. Put the single line from `stats_key.pub` in `stats_ssh_public_key` in `main/terraform.tfvars`. Commit that on the branch. Do not commit `stats_key`. Terraform wraps the line as the forced command. Paste the raw public key, not a line that already has `command=`.
+
+3. On GitHub, open **Settings → Environments → New environment**. Name it `luanti-stats`.
+   - Do **not** enable required reviewers. A reviewer would block the Monday run.
+   - Under **Deployment branches and tags**, allow the `main` branch only.
+   - Add an environment secret named `STATS_SSH_PRIVATE_KEY` whose value is the contents of `stats_key`.
+   - Do not add `DEPLOY_SSH_PRIVATE_KEY` to this environment.
+
+4. Delete the local `stats_key` and `stats_key.pub` files.
+
+5. Merge, then approve the one `production` deployment for that push. That apply is the config push. It creates `luantistats` if cloud-init has not, installs the forced-command key, `luanti-weekly-logs`, and the sudoers rule, and sets `AllowUsers` to `root luantiadmin luantistats`. It restarts Luanti, the same as any other config push. It does not replace the VM. The cleanup step in that same job removes the runner SSH rule.
+
+6. After that deploy is green, open **Actions → Luanti weekly stats → Run workflow** on `main`. The summary should show the JSON, and the artifact name is `luanti-weekly-stats`. The first Monday after that is the scheduled run.
+
+The weekly job reuses the repository secrets and variables the plan job already uses (`LINODE_TOKEN`, `CLOUDFLARE_API_TOKEN`, `TF_STATE_ACCESS_KEY`, `TF_STATE_SECRET_KEY`, `BACKUPS_ACCESS_KEY`, `BACKUPS_SECRET_KEY`, `TF_STATE_BUCKET`, `TF_STATE_ENDPOINT_HOST`). A targeted firewall plan still has to read state and satisfy the required backup variables. It does not read `production`. The only secret that belongs on `luanti-stats` is `STATS_SSH_PRIVATE_KEY`.
+
+`stats_ssh_public_key` is empty in git until you do step 2. The weekly workflow refuses to open SSH while it is empty. The production apply still runs and creates the account with no key; adding the public key afterwards is a second production approval and a second Luanti restart. Putting the public key on the branch before the first approval avoids that.
+
+Rotating the stats key does not use the stats key to connect. The production apply connects as root with the deploy key and rewrites `authorized_keys`. Replace `stats_ssh_public_key`, update `STATS_SSH_PRIVATE_KEY`, and approve that apply before the next Monday run. There is a gap between those two updates where a scheduled run cannot log in. Trigger the weekly workflow once after the apply so you see that before the gap matters.
 
 ## Credentials you must supply
 
@@ -356,8 +402,9 @@ Non-secret inputs (home CIDRs, player names, both public keys, game pin, backup 
 | `TF_VAR_backups_access_key` | environment, from bootstrap `backups_access_key` | World-backup uploads. Actions secret `BACKUPS_ACCESS_KEY` |
 | `TF_VAR_backups_secret_key` | environment, from bootstrap `backups_secret_key` | World-backup uploads. Actions secret `BACKUPS_SECRET_KEY` |
 | Deploy private key | `production` environment secret `DEPLOY_SSH_PRIVATE_KEY` | Config push from Actions |
+| Stats private key | `luanti-stats` environment secret `STATS_SSH_PRIVATE_KEY` | Weekly report. Forced command only. Not used by the production apply |
 | Owner private key | ssh-agent, only for a manual apply or for playing admin | Matches `admin_ssh_public_keys` |
-| `main/terraform.tfvars` | committed file | Every non-secret input, including the deploy public key |
+| `main/terraform.tfvars` | committed file | Every non-secret input, including the deploy and stats public keys |
 
 The backup secret is written into `/etc/luanti/rclone.conf` on the VM and is therefore also in the main state file. That state lives in the private state bucket, and the game server's key cannot read it. Keep the bootstrap state file private too.
 
@@ -365,7 +412,8 @@ The backup secret is written into `/etc/luanti/rclone.conf` on the VM and is the
 
 - The hostname resolves publicly. Privacy is the firewall, the name allowlist, and passwords, not a secret DNS name.
 - A `/64` is a household prefix. Anyone who can use an address in that prefix can open a UDP session. They still need an allowlisted name and a password.
-- Actions opens SSH to the runner for one apply and then removes that `/32`. If the cleanup step fails, that host route stays until a later apply. It is not a Luanti rule.
+- Actions opens SSH to the runner for one apply and then removes that `/32`. If the cleanup step fails, that host route stays until a later apply. It is not a Luanti rule. The weekly stats job does the same open and close, and it refuses to apply a firewall plan that changes anything else.
+- `luantistats` can only run the log script. Do not put that private key in the `production` environment, and do not add a required reviewer to `luanti-stats` or the Monday run will sit waiting.
 - Create the `production` environment and its required reviewer before this workflow is on `main`. Otherwise GitHub creates the environment with no reviewer and the apply starts on its own.
 - The first Actions apply needs a deploy public key already in `main/terraform.tfvars`. The job stops before Terraform if that list or the private-key secret is empty.
 - A manual apply still has to come from an `admin_cidrs` address. Do not set `ci_ssh_cidrs` in the committed file.

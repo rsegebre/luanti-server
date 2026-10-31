@@ -31,9 +31,18 @@ admin_ssh_public_keys = [
 deploy_ssh_public_keys = [
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINlxZvhA/SRQOfBOVU8BxyKfHN00/GKKj7BN/rDTder4 github-actions-luanti",
 ]
+# Public half of the weekly stats key. Not a login key: the config push wraps
+# it as a forced command for stats_user only. Generate it with:
+#   ssh-keygen -t ed25519 -C "github-actions-luanti-stats" -f stats_key -N ""
+# Put the private half in the luanti-stats environment secret
+# STATS_SSH_PRIVATE_KEY. Leave this empty until then. Do not commit the
+# private key. Adding the public key re-runs the config push; it does not
+# replace the VM.
+stats_ssh_public_key = ""
 # admin_ssh_private_key = null
 # ci_ssh_cidrs = []
-sudo_user = "luantiadmin"
+sudo_user  = "luantiadmin"
+stats_user = "luantistats"
 
 # Home IPv4 is a single address. Residential IPv6 (Comcast and similar) keeps
 # a stable /64 for the household and rotates the interface ID, so the prefix

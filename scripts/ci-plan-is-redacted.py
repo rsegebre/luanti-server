@@ -17,6 +17,7 @@ def main() -> None:
         "LINODE_TOKEN",
         "CLOUDFLARE_API_TOKEN",
         "DEPLOY_SSH_PRIVATE_KEY",
+        "STATS_SSH_PRIVATE_KEY",
     ]
     for name in names:
         value = os.environ.get(name, "")

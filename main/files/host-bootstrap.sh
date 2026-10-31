@@ -5,7 +5,17 @@ set -euo pipefail
 
 label="${1:?volume label required}"
 admin_user="${2:?sudo user required}"
+stats_user="${3:?stats user required}"
 dev="/dev/disk/by-id/scsi-0Linode_Volume_${label}"
+
+if [[ ! "$admin_user" =~ ^[a-z][a-z0-9-]{0,30}$ || ! "$stats_user" =~ ^[a-z][a-z0-9-]{0,30}$ ]]; then
+  echo "admin and stats users must be short lowercase names" >&2
+  exit 1
+fi
+if [[ "$stats_user" == "$admin_user" || "$stats_user" == "root" ]]; then
+  echo "stats user must not be root or the sudo user" >&2
+  exit 1
+fi
 
 sshd_set() {
   local key="$1"
@@ -22,7 +32,7 @@ sshd_set PasswordAuthentication no
 sshd_set KbdInteractiveAuthentication no
 sshd_set PermitRootLogin prohibit-password
 sshd_set PubkeyAuthentication yes
-sshd_set AllowUsers "root ${admin_user}"
+sshd_set AllowUsers "root ${admin_user} ${stats_user}"
 
 install -d -m 0755 /etc/ssh/sshd_config.d
 cat >/etc/ssh/sshd_config.d/99-luanti-hardening.conf <<EOF
@@ -30,11 +40,26 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
-AllowUsers root ${admin_user}
+AllowUsers root ${admin_user} ${stats_user}
 EOF
 
 if id "$admin_user" >/dev/null 2>&1; then
   usermod -aG docker "$admin_user"
+fi
+
+# The weekly stats account is created here so a new VM matches sshd before
+# the config push. It is not an admin: no sudo group, no docker group.
+# The forced-command key is installed by the push, not by this script.
+if ! id "$stats_user" >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash --user-group "$stats_user"
+fi
+usermod --shell /bin/bash "$stats_user"
+passwd -l "$stats_user" >/dev/null
+if id -nG "$stats_user" | tr ' ' '\n' | grep -qx sudo; then
+  gpasswd -d "$stats_user" sudo
+fi
+if id -nG "$stats_user" | tr ' ' '\n' | grep -qx docker; then
+  gpasswd -d "$stats_user" docker
 fi
 
 passwd -l root
