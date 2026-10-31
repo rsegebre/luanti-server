@@ -26,6 +26,13 @@ users:
     shell: /bin/bash
     lock_passwd: true
     sudo: ALL=(ALL) NOPASSWD:ALL
+  # Read-only stats account. No sudo and no docker group. Bash is required
+  # because sshd runs a forced command through the login shell. The key is
+  # not here: cloud-init does not re-run, and the config push installs the
+  # forced-command authorized_keys line.
+  - name: ${stats_user}
+    shell: /bin/bash
+    lock_passwd: true
 write_files:
   - path: /etc/apt/apt.conf.d/20auto-upgrades
     permissions: "0644"
@@ -44,4 +51,4 @@ write_files:
     content: |
       ${indent(6, chomp(host_bootstrap))}
 runcmd:
-  - [/usr/local/sbin/luanti-host-bootstrap, "${volume_label}", "${sudo_user}"]
+  - [/usr/local/sbin/luanti-host-bootstrap, "${volume_label}", "${sudo_user}", "${stats_user}"]

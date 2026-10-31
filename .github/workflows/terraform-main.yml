@@ -19,6 +19,10 @@ on:
       - "scripts/ci-backend.sh"
       - "scripts/ci-require-deploy-key.sh"
       - "scripts/ci-plan-is-redacted.py"
+      - "scripts/ci-firewall-ssh-only.py"
+      - "scripts/ci-firewall-ssh-apply.sh"
+      - "scripts/ci-require-stats-key.sh"
+      - "scripts/luanti-weekly-stats.py"
   push:
     branches:
       - main
@@ -30,6 +34,10 @@ on:
       - "scripts/ci-backend.sh"
       - "scripts/ci-require-deploy-key.sh"
       - "scripts/ci-plan-is-redacted.py"
+      - "scripts/ci-firewall-ssh-only.py"
+      - "scripts/ci-firewall-ssh-apply.sh"
+      - "scripts/ci-require-stats-key.sh"
+      - "scripts/luanti-weekly-stats.py"
 
 permissions:
   contents: read

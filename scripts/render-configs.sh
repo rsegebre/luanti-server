@@ -24,6 +24,7 @@ locals {
     hostname_short = "luanti"
     fqdn           = "luanti.rsegebre.com"
     sudo_user      = "luantiadmin"
+    stats_user     = "luantistats"
     volume_label   = "luanti-world"
     host_bootstrap  = file("${var.root}/main/files/host-bootstrap.sh")
   })

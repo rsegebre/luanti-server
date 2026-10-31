@@ -120,6 +120,26 @@ variable "deploy_ssh_public_keys" {
   }
 }
 
+variable "stats_ssh_public_key" {
+  type        = string
+  description = "Public half of the weekly-stats key. Not secret. Terraform wraps it as a forced command on the stats user only; it is not installed for root. The private half is the luanti-stats environment secret STATS_SSH_PRIVATE_KEY. Empty until the owner generates a key."
+  default     = ""
+
+  validation {
+    condition = (
+      var.stats_ssh_public_key == "" ||
+      (
+        !strcontains(var.stats_ssh_public_key, "\n") &&
+        !strcontains(var.stats_ssh_public_key, "\"") &&
+        !strcontains(var.stats_ssh_public_key, "command=") &&
+        !strcontains(var.stats_ssh_public_key, "no-port-forwarding") &&
+        can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com) [A-Za-z0-9+/=]+( [!-~][ -~]*)?$", var.stats_ssh_public_key))
+      )
+    )
+    error_message = "stats_ssh_public_key must be empty or one raw SSH public key line, without command= or other authorized_keys options."
+  }
+}
+
 variable "ci_ssh_cidrs" {
   type        = list(string)
   description = "Extra SSH host routes for this apply only. GitHub Actions sets the runner /32, then applies again with this empty. Leave it empty in tfvars."
@@ -145,6 +165,17 @@ variable "sudo_user" {
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{0,30}$", var.sudo_user))
     error_message = "sudo_user must be a short lowercase Linux username."
+  }
+}
+
+variable "stats_user" {
+  type        = string
+  description = "Read-only Linux user that the weekly stats job SSHes as. The config push creates it on an existing VM. Cloud-init creates it on the next instance. It is not an admin and is not in the sudo or docker groups."
+  default     = "luantistats"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{0,30}$", var.stats_user)) && var.stats_user != "root" && var.stats_user != var.sudo_user
+    error_message = "stats_user must be a short lowercase Linux username, and not root or sudo_user."
   }
 }
 
