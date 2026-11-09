@@ -10,6 +10,14 @@ locals {
 
   managed_authorized_keys = "${join("\n", concat(var.admin_ssh_public_keys, var.deploy_ssh_public_keys))}\n"
 
+  # Installed only on the stats user. Root's authorized_keys does not get this
+  # key. Empty until stats_ssh_public_key is set, so a push with no key removes
+  # a previous one instead of leaving a login key behind.
+  stats_authorized_keys = (
+    var.stats_ssh_public_key == "" ? "" :
+    "command=\"/usr/local/sbin/luanti-weekly-logs\",no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding ${var.stats_ssh_public_key}\n"
+  )
+
   public_ipv4 = one([
     for addr in tolist(linode_instance.luanti.ipv4) : addr
     if !startswith(addr, "192.168.")
@@ -20,6 +28,7 @@ locals {
     hostname_short = var.instance_label
     fqdn           = var.hostname
     sudo_user      = var.sudo_user
+    stats_user     = var.stats_user
     volume_label   = var.world_volume_label
     host_bootstrap = file("${path.module}/files/host-bootstrap.sh")
   })

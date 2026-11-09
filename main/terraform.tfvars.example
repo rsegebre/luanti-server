@@ -29,9 +29,13 @@ admin_ssh_public_keys = [
 # to run with an empty list. To rotate, add the new key beside the old one,
 # apply, switch the secret, then remove the old key and apply again.
 deploy_ssh_public_keys = []
+# Raw public key for the weekly stats user. Terraform adds the forced command.
+# Private half: luanti-stats environment secret STATS_SSH_PRIVATE_KEY.
+stats_ssh_public_key = ""
 # admin_ssh_private_key = null
 # ci_ssh_cidrs = []
-sudo_user = "luantiadmin"
+sudo_user  = "luantiadmin"
+stats_user = "luantistats"
 
 # Home IPv4 is a single address. Residential IPv6 (Comcast and similar) keeps
 # a stable /64 for the household and rotates the interface ID, so the prefix

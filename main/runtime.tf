@@ -6,23 +6,27 @@ resource "terraform_data" "runtime_config" {
   # mods is folded into server_env (a MODS_SHA256 line) only when the list is
   # non-empty, so mods = [] does not by itself replace this resource.
   triggers_replace = {
-    minetest_conf       = local.minetest_conf
-    world_mt            = local.world_mt
-    allowlist_init      = local.allowlist_init
-    mod_conf            = local.mod_conf
-    server_env          = local.server_env
-    backup_timer        = local.backup_timer
-    backups_secret_hash = local.backups_secret_hash
-    backups_access_hash = local.backups_access_hash
-    authorized_keys     = local.managed_authorized_keys
-    object_endpoint     = var.object_storage_endpoint
-    install_script      = filesha256("${path.module}/files/luanti-install.sh")
-    run_script          = filesha256("${path.module}/files/luanti-run.sh")
-    backup_script       = filesha256("${path.module}/files/luanti-backup.sh")
-    restore_script      = filesha256("${path.module}/files/luanti-restore.sh")
-    setpassword_script  = filesha256("${path.module}/files/luanti-setpassword.sh")
-    unit_service        = filesha256("${path.module}/files/luanti.service")
-    unit_backup         = filesha256("${path.module}/files/luanti-backup.service")
+    minetest_conf         = local.minetest_conf
+    world_mt              = local.world_mt
+    allowlist_init        = local.allowlist_init
+    mod_conf              = local.mod_conf
+    server_env            = local.server_env
+    backup_timer          = local.backup_timer
+    backups_secret_hash   = local.backups_secret_hash
+    backups_access_hash   = local.backups_access_hash
+    authorized_keys       = local.managed_authorized_keys
+    stats_user            = var.stats_user
+    stats_authorized_keys = local.stats_authorized_keys
+    stats_user_script     = filesha256("${path.module}/files/luanti-stats-user.sh")
+    weekly_logs_script    = filesha256("${path.module}/files/luanti-weekly-logs.sh")
+    object_endpoint       = var.object_storage_endpoint
+    install_script        = filesha256("${path.module}/files/luanti-install.sh")
+    run_script            = filesha256("${path.module}/files/luanti-run.sh")
+    backup_script         = filesha256("${path.module}/files/luanti-backup.sh")
+    restore_script        = filesha256("${path.module}/files/luanti-restore.sh")
+    setpassword_script    = filesha256("${path.module}/files/luanti-setpassword.sh")
+    unit_service          = filesha256("${path.module}/files/luanti.service")
+    unit_backup           = filesha256("${path.module}/files/luanti-backup.service")
   }
 
   depends_on = [
@@ -140,6 +144,21 @@ resource "terraform_data" "runtime_config" {
   }
 
   provisioner "file" {
+    content     = local.stats_authorized_keys
+    destination = "/etc/luanti/stats.authorized_keys"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/files/luanti-weekly-logs.sh"
+    destination = "/usr/local/sbin/luanti-weekly-logs"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/files/luanti-stats-user.sh"
+    destination = "/usr/local/sbin/luanti-stats-user"
+  }
+
+  provisioner "file" {
     source      = "${path.module}/files/luanti.service"
     destination = "/etc/systemd/system/luanti.service"
   }
@@ -151,9 +170,12 @@ resource "terraform_data" "runtime_config" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod 0755 /usr/local/sbin/luanti-install /usr/local/sbin/luanti-mods /usr/local/sbin/luanti-run /usr/local/sbin/luanti-backup /usr/local/sbin/luanti-restore /usr/local/sbin/luanti-setpassword",
+      "chmod 0755 /usr/local/sbin/luanti-install /usr/local/sbin/luanti-mods /usr/local/sbin/luanti-run /usr/local/sbin/luanti-backup /usr/local/sbin/luanti-restore /usr/local/sbin/luanti-setpassword /usr/local/sbin/luanti-weekly-logs /usr/local/sbin/luanti-stats-user",
+      "chown root:root /usr/local/sbin/luanti-weekly-logs /usr/local/sbin/luanti-stats-user",
       "chmod 0644 /etc/luanti/minetest.conf /etc/luanti/server.env /etc/systemd/system/luanti.service /etc/systemd/system/luanti-backup.service /etc/systemd/system/luanti-backup.timer /var/lib/luanti/mods.manifest",
-      "chmod 0600 /etc/luanti/rclone.conf",
+      "chmod 0600 /etc/luanti/rclone.conf /etc/luanti/stats.authorized_keys",
+      "chown root:root /etc/luanti/stats.authorized_keys",
+      "/usr/local/sbin/luanti-stats-user ${var.stats_user} ${var.sudo_user} /etc/luanti/stats.authorized_keys",
       "/usr/local/sbin/luanti-mods",
       "/usr/local/sbin/luanti-install",
     ]
